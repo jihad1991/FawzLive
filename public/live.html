@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>مخيم الحاشي · شاشة السحب</title>
+<link rel="icon" href="assets/hashi-logo-clean.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Poppins:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="css/app.css">
+<style>
+  /* ============ Stage ============ */
+  .live-stage { position:fixed; inset:0; z-index:50; color:#fdf4de; display:flex; flex-direction:column; overflow:hidden;
+    background: radial-gradient(circle at 0% -20%, rgba(222,170,93,.20), transparent 55%),
+                radial-gradient(circle at 110% 0%, rgba(95,61,42,.55), transparent 45%),
+                radial-gradient(circle at 50% 120%, rgba(175,106,22,.25), transparent 50%), #2b1a10; }
+  .live-stage.shake { animation: stageShake .55s cubic-bezier(.36,.07,.19,.97) both; }
+
+  .bg-pattern { position:absolute; inset:-120px; z-index:0; opacity:.05; pointer-events:none;
+    background:url('assets/hashi-pattern.png') repeat; background-size:340px;
+    animation: patternDrift 90s linear infinite; }
+  .bg-rays { position:absolute; left:50%; top:44%; width:min(160vh,1400px); aspect-ratio:1; z-index:0; pointer-events:none;
+    transform:translate(-50%,-50%); opacity:.5; transition: opacity .8s;
+    background: conic-gradient(from 0deg,
+      transparent 0deg, rgba(222,170,93,.10) 8deg, transparent 22deg,
+      transparent 60deg, rgba(222,170,93,.08) 70deg, transparent 84deg,
+      transparent 120deg, rgba(222,170,93,.11) 130deg, transparent 145deg,
+      transparent 180deg, rgba(222,170,93,.08) 190deg, transparent 205deg,
+      transparent 240deg, rgba(222,170,93,.10) 250deg, transparent 265deg,
+      transparent 300deg, rgba(222,170,93,.08) 310deg, transparent 325deg);
+    -webkit-mask: radial-gradient(circle, #000 0%, transparent 68%);
+            mask: radial-gradient(circle, #000 0%, transparent 68%);
+    animation: raysSpin 70s linear infinite; }
+  .live-stage.hot .bg-rays { opacity:1; animation-duration: 18s; }
+  .vignette { position:absolute; inset:0; z-index:1; pointer-events:none;
+    background: radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(20,11,5,.55) 100%); }
+
+  #ambient, #confetti { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  #ambient { z-index:2; } #confetti { z-index:40; }
+
+  .flash { position:absolute; inset:0; z-index:45; pointer-events:none; opacity:0;
+    background: radial-gradient(circle at 50% 45%, rgba(255,250,235,.98), rgba(251,231,189,.75) 40%, transparent 75%); }
+  .flash.go { animation: flashOut 1s ease-out both; }
+
+  /* ============ Header ============ */
+  .live-head { display:flex; align-items:center; justify-content:space-between; padding:24px 40px; position:relative; z-index:6; }
+  .head-btn { width:42px; height:42px; border-radius:999px; display:grid; place-items:center; font-size:1.05rem;
+    border:1px solid rgba(222,170,93,.28); color:rgba(253,244,222,.85); background:rgba(43,26,16,.55); transition:.25s; }
+  .head-btn:hover { border-color:rgba(222,170,93,.7); color:#fdf4de; box-shadow:0 0 18px -4px rgba(222,170,93,.5); }
+
+  /* ============ Viewer counter ============ */
+  .viewers-wrap { position:absolute; top:22px; left:50%; transform:translateX(-50%); z-index:8;
+    display:flex; align-items:center; gap:8px; }
+  .viewers { display:flex; align-items:center; gap:12px; padding:10px 20px; border-radius:999px;
+    background:linear-gradient(160deg, rgba(60,35,18,.92), rgba(43,26,16,.85));
+    border:1px solid rgba(222,170,93,.4); box-shadow:0 14px 40px -14px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.08);
+    backdrop-filter: blur(8px); animation: fadeUp .5s ease both; }
+  .live-dot { width:9px; height:9px; border-radius:999px; background:#ff4d4d; position:relative; flex:0 0 auto; }
+  .live-dot::after { content:''; position:absolute; inset:-4px; border-radius:999px; border:2px solid rgba(255,77,77,.6);
+    animation: livePing 1.6s ease-out infinite; }
+  .live-tag { font-weight:900; font-size:.8rem; letter-spacing:.18em; color:#ff6b6b; }
+  .viewers .sep { width:1px; height:18px; background:rgba(222,170,93,.3); }
+  .viewers .eye { opacity:.75; font-size:1rem; }
+  .odo { display:flex; direction:ltr; font-family:'Poppins',sans-serif; font-weight:700; font-size:1.25rem; line-height:1;
+    color:#fbe7bd; text-shadow:0 0 18px rgba(222,170,93,.5); }
+  .odo .grp { padding:0 1px; }
+  .odo-digit { height:1em; overflow:hidden; }
+  .odo-digit > div { display:flex; flex-direction:column; transition: transform .65s cubic-bezier(.22,1,.36,1); }
+  .odo-digit span { height:1em; display:block; text-align:center; }
+  .viewers-toggle { width:30px; height:30px; border-radius:999px; display:grid; place-items:center; font-size:.8rem;
+    color:rgba(253,244,222,.6); border:1px solid rgba(222,170,93,.22); background:rgba(43,26,16,.5); transition:.25s; }
+  .viewers-toggle:hover { color:#fdf4de; border-color:rgba(222,170,93,.6); }
+  .viewers-wrap.hidden-count .viewers { display:none; }
+  .viewers-wrap.hidden-count .viewers-toggle { opacity:.22; }
+  .viewers-wrap.hidden-count .viewers-toggle:hover { opacity:1; }
+
+  /* ============ Center ============ */
+  .live-main { flex:1; min-height:0; overflow:auto; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:clamp(10px,2vh,24px); position:relative; z-index:6; text-align:center; padding:0 24px; }
+  .logo-card { flex:0 0 auto; background:#fdf4de; border:1px solid rgba(222,170,93,.5); border-radius:26px;
+    padding:clamp(10px,1.8vh,24px) clamp(22px,4vw,48px);
+    box-shadow:0 30px 70px -30px rgba(0,0,0,.6), 0 0 60px -18px rgba(222,170,93,.35);
+    animation: floatY 5.5s ease-in-out infinite; }
+  .prize-eyebrow { text-transform:uppercase; letter-spacing:.4em; font-size:.8rem; font-weight:700;
+    color:var(--poslix-accent-highlight); display:flex; align-items:center; gap:14px; }
+  .prize-eyebrow::before, .prize-eyebrow::after { content:''; width:clamp(30px,6vw,70px); height:1px;
+    background:linear-gradient(90deg, transparent, rgba(222,170,93,.8)); }
+  .prize-eyebrow::after { background:linear-gradient(90deg, rgba(222,170,93,.8), transparent); }
+  .gold-text { background:linear-gradient(100deg, #b57a24 8%, #fbe7bd 28%, #deaa5d 46%, #fff3d6 58%, #c98a1e 78%);
+    background-size:220% 100%; -webkit-background-clip:text; background-clip:text; color:transparent;
+    animation: shimmer 4.5s linear infinite; }
+  .prize-name { font-weight:900; font-size:clamp(1.6rem,3.4vw,2.7rem); filter:drop-shadow(0 4px 22px rgba(222,170,93,.35)); }
+
+  /* ============ Reel ============ */
+  .reel { width:min(780px,94vw); flex:0 0 auto; height:clamp(168px,27vh,250px); border-radius:28px; position:relative;
+    border:1px solid rgba(222,170,93,.45); overflow:hidden;
+    background:linear-gradient(160deg, rgba(255,255,255,.07), rgba(255,255,255,.01));
+    box-shadow: inset 0 0 60px rgba(20,11,5,.5), 0 24px 70px -30px rgba(0,0,0,.7);
+    transition: box-shadow .5s, border-color .5s; }
+  .reel.spin { border-color:rgba(222,170,93,.9); animation: reelGlow 1s ease-in-out infinite; }
+  .reel.won { border-color:#deaa5d;
+    box-shadow: inset 0 0 60px rgba(175,106,22,.25), 0 0 90px -10px rgba(222,170,93,.55), 0 24px 70px -30px rgba(0,0,0,.7); }
+  .reel .corner { position:absolute; width:26px; height:26px; z-index:4; border:2px solid rgba(222,170,93,.85); }
+  .reel .c1 { top:10px; right:10px; border-left:0; border-bottom:0; border-radius:0 14px 0 0; }
+  .reel .c2 { top:10px; left:10px;  border-right:0; border-bottom:0; border-radius:14px 0 0 0; }
+  .reel .c3 { bottom:10px; right:10px; border-left:0; border-top:0; border-radius:0 0 14px 0; }
+  .reel .c4 { bottom:10px; left:10px; border-right:0; border-top:0; border-radius:0 0 0 14px; }
+  .reel-fade { position:absolute; inset:0; z-index:3; pointer-events:none;
+    background:linear-gradient(180deg, rgba(43,26,16,.95), transparent 26%, transparent 74%, rgba(43,26,16,.95)); }
+  .center-band { position:absolute; left:0; right:0; top:50%; transform:translateY(-50%); height:33.4%; z-index:2; pointer-events:none;
+    background:linear-gradient(90deg, transparent, rgba(222,170,93,.10) 18%, rgba(222,170,93,.16) 50%, rgba(222,170,93,.10) 82%, transparent);
+    border-top:1px solid rgba(222,170,93,.35); border-bottom:1px solid rgba(222,170,93,.35); opacity:0; transition:opacity .4s; }
+  .reel.spin .center-band { opacity:1; }
+  .chev { position:absolute; top:50%; transform:translateY(-50%); z-index:4; font-size:1.3rem; color:#deaa5d;
+    opacity:0; transition:opacity .4s; text-shadow:0 0 14px rgba(222,170,93,.8); }
+  .reel.spin .chev { opacity:1; animation: chevPulse .5s ease-in-out infinite alternate; }
+  .chev.r { right:16px; } .chev.l { left:16px; }
+  #reelSpin { position:absolute; inset:0; z-index:1; transition: opacity .45s ease; }
+  .slot-item { position:absolute; left:0; right:0; display:flex; align-items:center; justify-content:center;
+    font-weight:800; font-size:clamp(1.7rem,4.2vw,3rem); color:#fdf4de; white-space:nowrap; will-change:transform; }
+  #reelIdle { position:absolute; inset:0; z-index:2; display:grid; place-items:center;
+    font-weight:800; font-size:clamp(2.2rem,5vw,3.6rem); color:#fdf4de; letter-spacing:.1em; }
+  #winnerBox { position:absolute; inset:0; z-index:5; display:none; flex-direction:column; align-items:center; justify-content:center; gap:6px;
+    background:radial-gradient(circle at 50% 50%, rgba(175,106,22,.20), transparent 70%); }
+  .winner-eyebrow { font-size:.85rem; letter-spacing:.35em; text-transform:uppercase; font-weight:700; color:var(--poslix-accent-highlight);
+    animation: fadeUp .5s .15s ease both; }
+  #winnerName { font-weight:900; font-size:clamp(2.3rem,5.5vw,4.2rem); line-height:1.15; padding:0 20px; max-width:100%;
+    animation: winnerIn .7s cubic-bezier(.18,1.2,.3,1) both; }
+  #winnerPhone { opacity:.6; font-size:1.05rem; letter-spacing:.2em; direction:ltr; font-family:'Poppins',sans-serif;
+    animation: fadeUp .5s .35s ease both; }
+
+  /* ============ Controls ============ */
+  .lbtn-primary { position:relative; overflow:hidden; padding:15px 36px; border-radius:999px;
+    background:linear-gradient(135deg,#deaa5d,#af6a16); color:#2b1a10; font-weight:800; font-size:1.05rem;
+    box-shadow:0 18px 40px -18px rgba(222,170,93,.7); transition: transform .2s; }
+  .lbtn-primary:not(:disabled) { animation: btnBreath 2.6s ease-in-out infinite; }
+  .lbtn-primary:hover { transform:scale(1.04); }
+  .lbtn-primary:disabled { opacity:.5; animation:none; cursor:default; }
+  .lbtn-primary::after { content:''; position:absolute; top:0; bottom:0; width:40%; left:-60%; transform:skewX(-20deg);
+    background:linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent);
+    animation: sheen 2.6s ease-in-out infinite; }
+  .lbtn-ghost { padding:15px 24px; border-radius:999px; border:1px solid rgba(255,255,255,.2); color:#fff; font-weight:700;
+    background:transparent; transition:.25s; }
+  .lbtn-ghost:hover { border-color:rgba(222,170,93,.7); box-shadow:0 0 20px -6px rgba(222,170,93,.5); }
+
+  /* ============ Winners row ============ */
+  .live-foot { padding:20px 40px 30px; position:relative; z-index:6; }
+  .winners-label { text-align:center; font-size:.78rem; letter-spacing:.25em; text-transform:uppercase; color:rgba(255,255,255,.4); margin-bottom:14px; }
+  .winner-card { min-width:180px; padding:14px 22px 16px; border-radius:18px; text-align:center; position:relative;
+    background:linear-gradient(160deg, rgba(222,170,93,.20), rgba(255,255,255,.02));
+    border:1px solid rgba(222,170,93,.4); animation: cardIn .55s cubic-bezier(.18,1.1,.3,1) both; }
+  .winner-card .rank { width:30px; height:30px; margin:-28px auto 4px; border-radius:999px; display:grid; place-items:center;
+    font-family:'Poppins',sans-serif; font-weight:700; font-size:.8rem; color:#2b1a10;
+    background:linear-gradient(135deg,#fbe7bd,#deaa5d 55%,#af6a16); border:1px solid rgba(255,246,226,.6);
+    box-shadow:0 8px 18px -8px rgba(0,0,0,.7); }
+  .winner-card.latest { border-color:#deaa5d; box-shadow:0 0 40px -8px rgba(222,170,93,.55);
+    animation: cardIn .55s cubic-bezier(.18,1.1,.3,1) both, latestGlow 2s ease-in-out infinite .6s; }
+
+  /* ============ Winner reels ============ */
+  .reels-btn { display:none; align-items:center; gap:8px; margin-top:4px; padding:9px 22px; border-radius:999px;
+    border:1px solid rgba(222,170,93,.55); color:#fbe7bd; font-weight:700; font-size:.92rem;
+    background:rgba(222,170,93,.12); animation: fadeUp .5s .55s ease both; transition:.25s; }
+  .reels-btn:hover { background:rgba(222,170,93,.24); border-color:#deaa5d; box-shadow:0 0 24px -8px rgba(222,170,93,.7); }
+  .reels-overlay { position:fixed; inset:0; z-index:70; display:none; place-items:center; padding:20px;
+    background:rgba(28,16,8,.8); backdrop-filter: blur(10px); }
+  .reels-overlay.on { display:grid; }
+  .reels-box { width:min(540px,94vw); max-height:86vh; overflow:auto; border-radius:26px; padding:30px 28px;
+    background:linear-gradient(165deg, #3c2312, #2b1a10); border:1px solid rgba(222,170,93,.45);
+    box-shadow:0 45px 90px -50px rgba(0,0,0,.9), 0 0 70px -20px rgba(222,170,93,.35);
+    animation: popIn .35s cubic-bezier(.18,1.1,.3,1) both; text-align:center; }
+  .reels-box .who { font-weight:900; font-size:1.5rem; margin-top:4px; }
+  .reel-link { display:flex; align-items:center; gap:12px; padding:14px 18px; margin-top:12px; border-radius:16px;
+    border:1px solid rgba(222,170,93,.35); background:rgba(222,170,93,.08); color:#fdf4de !important; font-weight:700; transition:.25s; }
+  .reel-link:hover { border-color:#deaa5d; background:rgba(222,170,93,.18); box-shadow:0 0 26px -8px rgba(222,170,93,.6); transform:translateY(-2px); }
+  .reel-link .url { direction:ltr; opacity:.55; font-size:.78rem; font-family:'Poppins',sans-serif; margin-inline-start:auto;
+    max-width:55%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .reels-close { margin-top:20px; padding:10px 30px; border-radius:999px; border:1px solid rgba(255,255,255,.2);
+    color:rgba(253,244,222,.8); font-weight:700; transition:.25s; }
+  .reels-close:hover { border-color:rgba(222,170,93,.6); color:#fdf4de; }
+
+  /* ============ Countdown ============ */
+  .countdown { position:fixed; inset:0; z-index:60; display:none; place-items:center;
+    background:rgba(28,16,8,.78); backdrop-filter: blur(10px); }
+  .countdown.on { display:grid; }
+  .cd-ring { position:absolute; width:min(52vh,420px); aspect-ratio:1; border-radius:999px;
+    border:2px solid rgba(222,170,93,.4); animation: ringPulse .85s ease-out infinite; }
+  #cdNum { font-family:'Poppins',sans-serif; font-weight:800; font-size:clamp(9rem,32vh,17rem); line-height:1;
+    filter:drop-shadow(0 0 50px rgba(222,170,93,.6)); }
+  #cdNum.pop { animation: cdPop .85s cubic-bezier(.16,1,.3,1) both; }
+
+  /* ============ Keyframes ============ */
+  @keyframes patternDrift { from { background-position:0 0; } to { background-position:340px 680px; } }
+  @keyframes raysSpin { to { transform:translate(-50%,-50%) rotate(360deg); } }
+  @keyframes floatY { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-9px); } }
+  @keyframes shimmer { from { background-position:220% 0; } to { background-position:-220% 0; } }
+  @keyframes livePing { 0% { transform:scale(.6); opacity:1; } 100% { transform:scale(1.9); opacity:0; } }
+  @keyframes reelGlow { 0%,100% { box-shadow: inset 0 0 60px rgba(20,11,5,.5), 0 0 24px -6px rgba(222,170,93,.45); }
+    50% { box-shadow: inset 0 0 60px rgba(20,11,5,.5), 0 0 64px -6px rgba(222,170,93,.75); } }
+  @keyframes chevPulse { from { transform:translateY(-50%) scale(1); } to { transform:translateY(-50%) scale(1.25); } }
+  @keyframes btnBreath { 0%,100% { box-shadow:0 18px 40px -18px rgba(222,170,93,.7); }
+    50% { box-shadow:0 18px 55px -12px rgba(222,170,93,.95); } }
+  @keyframes sheen { 0%, 55% { left:-60%; } 90%, 100% { left:130%; } }
+  @keyframes winnerIn { 0% { opacity:0; transform:scale(2.1); filter:blur(14px); }
+    60% { filter:blur(0); } 75% { transform:scale(.97); } 100% { opacity:1; transform:scale(1); } }
+  @keyframes cardIn { 0% { opacity:0; transform:translateY(26px) scale(.8); } 65% { transform:translateY(-4px) scale(1.04); }
+    100% { opacity:1; transform:translateY(0) scale(1); } }
+  @keyframes latestGlow { 0%,100% { box-shadow:0 0 30px -10px rgba(222,170,93,.45); } 50% { box-shadow:0 0 52px -8px rgba(222,170,93,.8); } }
+  @keyframes stageShake { 10%,90% { transform:translate(-2px,1px); } 20%,80% { transform:translate(4px,-2px); }
+    30%,50%,70% { transform:translate(-6px,2px); } 40%,60% { transform:translate(6px,-1px); } }
+  @keyframes flashOut { 0% { opacity:1; } 100% { opacity:0; } }
+  @keyframes ringPulse { 0% { transform:scale(.55); opacity:.9; } 100% { transform:scale(1.25); opacity:0; } }
+  @keyframes cdPop { 0% { opacity:0; transform:scale(2.6); filter:blur(16px); }
+    35% { opacity:1; filter:blur(0); transform:scale(1); } 80% { opacity:1; transform:scale(.94); }
+    100% { opacity:0; transform:scale(.85); } }
+</style>
+</head>
+<body data-lang="ar">
+<div class="live-stage" id="stage">
+  <div class="bg-pattern"></div>
+  <div class="bg-rays"></div>
+  <div class="vignette"></div>
+  <canvas id="ambient"></canvas>
+  <canvas id="confetti"></canvas>
+  <div class="flash" id="flash"></div>
+
+  <!-- Viewer counter (toggle: click the eye, or press V) -->
+  <div class="viewers-wrap" id="viewersWrap">
+    <div class="viewers" id="viewersPill">
+      <span class="live-dot"></span>
+      <span class="live-tag"><span class="tar">مباشر</span><span class="ten">LIVE</span></span>
+      <span class="sep"></span>
+      <span class="eye"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></span>
+      <div class="odo" id="viewerOdo"></div>
+    </div>
+    <button class="viewers-toggle" id="viewersToggle" title="إظهار/إخفاء العداد (V)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+  </div>
+
+  <div class="live-head">
+    <div>
+      <div style="font-weight:700;font-size:1.05rem;" id="storeName">مخيم الحاشي</div>
+      <div style="opacity:.6;font-size:.85rem;direction:ltr;" id="sub">—</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <select id="drawPick" style="padding:9px 16px;border-radius:999px;background:rgba(43,26,16,.7);color:#fdf4de;border:1px solid rgba(222,170,93,.35);font-weight:700;font-size:.85rem;font-family:inherit;outline:none;"></select>
+      <button class="head-btn" id="soundBtn" title="الصوت"></button>
+      <button class="head-btn" id="fsBtn" title="ملء الشاشة"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+      <a href="/admin" class="lbtn-ghost" style="padding:9px 18px;font-size:.85rem;"><span class="tar">خروج</span><span class="ten">Exit</span></a>
+    </div>
+  </div>
+
+  <div class="live-main">
+    <div class="logo-card">
+      <img src="assets/hashi-logo-live.png" alt="مخيم الحاشي" style="display:block;height:clamp(84px,16vh,190px);width:auto;max-width:min(72vw,520px);object-fit:contain;">
+    </div>
+    <div class="prize-eyebrow"><span class="tar">الجائزة الكبرى</span><span class="ten">The Grand Prize</span></div>
+    <div class="prize-name gold-text" id="prizeName">—</div>
+
+    <div class="reel" id="reel">
+      <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+      <div class="center-band"></div>
+      <span class="chev r">◄</span><span class="chev l">►</span>
+      <div id="reelSpin"></div>
+      <div class="reel-fade"></div>
+      <div id="reelIdle">؟؟؟</div>
+      <div id="winnerBox">
+        <div class="winner-eyebrow"><span class="tar">الفائز</span><span class="ten">Winner</span></div>
+        <div id="winnerName" class="gold-text"></div>
+        <div id="winnerPhone"></div>
+        <button id="reelsBtn" class="reels-btn"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-inline-end:7px;"><rect x="2" y="2" width="20" height="20" rx="2.5"/><path d="M2 7h20M7 2l3 5M13 2l3 5"/><path d="m10 12 5 3-5 3z"/></svg><span class="tar">عرض الريلز</span><span class="ten">View reels</span></button>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center;" id="controls">
+      <button id="rollBtn" class="lbtn-primary"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" style="vertical-align:-3px;margin-inline-end:8px;"><path d="M6 4l14 8-14 8z"/></svg><span class="tar">ابدأ السحب</span><span class="ten">Start draw</span></button>
+      <button id="nextBtn" class="lbtn-ghost"><span class="tar">الفائز التالي</span><span class="ten">Next winner</span></button>
+      <button id="resetBtn" class="lbtn-ghost" style="border-color:rgba(255,255,255,.12);color:rgba(255,255,255,.7);"><span class="tar">إعادة</span><span class="ten">Reset</span></button>
+    </div>
+    <div class="caption" id="authHint" style="color:rgba(255,255,255,.5);display:none;"><span class="tar">للتحكم بالسحب سجّل دخول المسؤول أولاً</span><span class="ten">Sign in as admin to control the draw</span></div>
+  </div>
+
+  <div class="live-foot">
+    <div class="winners-label"><span class="tar">الفائزون</span><span class="ten">Winners</span> · <span id="wCount">0</span> / <span id="wTotal">0</span></div>
+    <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;padding-top:14px;" id="winnersRow"></div>
+  </div>
+</div>
+
+<div class="countdown" id="countdown"><div class="cd-ring"></div><div id="cdNum" class="gold-text"></div></div>
+
+<div class="reels-overlay" id="reelsOverlay">
+  <div class="reels-box">
+    <div class="winner-eyebrow" style="animation:none;"><span class="tar">ريلز الفائز</span><span class="ten">Winner's reels</span></div>
+    <div class="who gold-text" id="reelsWho"></div>
+    <div id="reelsList"></div>
+    <button class="reels-close" id="reelsClose"><span class="tar">إغلاق</span><span class="ten">Close</span></button>
+  </div>
+</div>
+
+<script type="module">
+import { api, toast, initLang, connectWS, esc } from './js/common.js';
+initLang();
+const $ = (id) => document.getElementById(id);
+const isEn = () => document.body.getAttribute('data-lang') === 'en';
+
+let pool = [], isAdmin = false, currentCid = null;
+const cid = () => (currentCid ? '?campaignId=' + currentCid : '');
+
+/* ================= Sound (synthesized — no assets) ================= */
+const Sound = (() => {
+  let ctx = null, on = localStorage.getItem('ld_sound') === '1';
+  const ac = () => (ctx ||= new (window.AudioContext || window.webkitAudioContext)());
+  function blip(freq, dur, vol, type = 'square', when = 0) {
+    if (!on) return;
+    try {
+      const a = ac(), o = a.createOscillator(), g = a.createGain(), t = a.currentTime + when;
+      o.type = type; o.frequency.value = freq;
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+      o.connect(g).connect(a.destination); o.start(t); o.stop(t + dur + .02);
+    } catch {}
+  }
+  return {
+    get on() { return on; },
+    toggle() { on = !on; localStorage.setItem('ld_sound', on ? '1' : '0'); if (on) ac().resume?.(); return on; },
+    tick() { blip(1250, .045, .05); },
+    beep(final) { blip(final ? 990 : 620, final ? .35 : .16, .12, 'sine'); },
+    fanfare() { [523, 659, 784, 1047, 1319].forEach((f, i) => { blip(f, .6, .12, 'triangle', i * .09); blip(f * 2, .35, .04, 'sine', i * .09); }); },
+  };
+})();
+const SND = {
+  on:  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>',
+  off: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="m23 9-6 6M17 9l6 6"/></svg>',
+};
+$('soundBtn').innerHTML = Sound.on ? SND.on : SND.off;
+$('soundBtn').addEventListener('click', () => { $('soundBtn').innerHTML = Sound.toggle() ? SND.on : SND.off; });
+
+$('fsBtn').addEventListener('click', () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen?.();
+});
+
+/* ================= Viewer counter (odometer) ================= */
+const Viewers = (() => {
+  const wrap = $('viewersWrap'), odo = $('viewerOdo');
+  let shown = '';
+  if (localStorage.getItem('ld_viewers_hidden') === '1') wrap.classList.add('hidden-count');
+  function toggle() {
+    wrap.classList.toggle('hidden-count');
+    localStorage.setItem('ld_viewers_hidden', wrap.classList.contains('hidden-count') ? '1' : '0');
+  }
+  $('viewersToggle').addEventListener('click', toggle);
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyV' && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || '')) toggle();
+  });
+  function set(n) {
+    const str = Math.max(0, n).toLocaleString('en-US');
+    if (str.length !== shown.length || [...str].some((c, i) => isNaN(+c) !== isNaN(+shown[i]))) {
+      odo.innerHTML = [...str].map(c => isNaN(+c)
+        ? `<span class="grp">${c}</span>`
+        : `<div class="odo-digit"><div>${'0123456789'.split('').map(d => `<span>${d}</span>`).join('')}</div></div>`).join('');
+    }
+    const cols = odo.querySelectorAll('.odo-digit > div');
+    let di = 0;
+    for (const c of str) if (!isNaN(+c)) cols[di++].style.transform = `translateY(-${+c}em)`;
+    shown = str;
+  }
+  set(1);
+  return { set };
+})();
+
+/* ================= Ambient golden dust ================= */
+(() => {
+  const cv = $('ambient'), ctx = cv.getContext('2d');
+  let parts = [];
+  function size() { cv.width = cv.offsetWidth; cv.height = cv.offsetHeight; }
+  size(); window.addEventListener('resize', size);
+  const mk = () => ({ x: Math.random() * cv.width, y: cv.height + 10 + Math.random() * 80,
+    r: Math.random() * 2.2 + .6, s: Math.random() * .5 + .18, ph: Math.random() * Math.PI * 2, a: Math.random() * .5 + .25 });
+  for (let i = 0; i < 60; i++) { const p = mk(); p.y = Math.random() * cv.height; parts.push(p); }
+  (function loop() {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    for (const p of parts) {
+      p.y -= p.s; p.ph += .012; p.x += Math.sin(p.ph) * .3;
+      if (p.y < -12) Object.assign(p, mk());
+      const tw = .55 + .45 * Math.sin(p.ph * 3);
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7);
+      ctx.fillStyle = `rgba(222,170,93,${(p.a * tw).toFixed(3)})`; ctx.fill();
+    }
+    requestAnimationFrame(loop);
+  })();
+})();
+
+/* ================= Slot reel engine ================= */
+const Reel = (() => {
+  const reel = $('reel'), layer = $('reelSpin'), stage = $('stage');
+  const SLOTS = 7, VMAX_ITEMS = 15, MIN_CRUISE = 2600;
+  let slots = [], strip = ['؟؟؟'], phase = 'idle';
+  let offset = 0, speed = 0, itemH = 80, lastT = 0, raf = 0;
+  let landing = null, startedAt = 0, lastIdx = 0, lastTickAt = 0, onLanded = null, watchdog = 0;
+
+  for (let i = 0; i < SLOTS; i++) {
+    const d = document.createElement('div');
+    d.className = 'slot-item'; layer.appendChild(d); slots.push(d);
+  }
+  function measure() { itemH = reel.clientHeight / 3; slots.forEach(s => s.style.height = itemH + 'px'); }
+  measure(); window.addEventListener('resize', () => { measure(); if (phase !== 'idle') draw(); });
+
+  function setStrip(names) {
+    let s = (names || []).filter(Boolean);
+    if (!s.length) s = ['؟؟؟'];
+    while (s.length < 24) s = s.concat(s);
+    strip = s;
+  }
+  const nameAt = (i) => (landing && i === landing.index) ? landing.winner
+    : strip[(((landing && i > landing.index ? i + 5 : i) % strip.length) + strip.length) % strip.length];
+
+  function draw() {
+    const center = (reel.clientHeight - itemH) / 2;
+    const base = Math.floor(offset / itemH);
+    for (let k = 0; k < SLOTS; k++) {
+      const j = base - 3 + k, el = slots[k];
+      const y = j * itemH - offset + center;
+      const dist = Math.abs(y - center) / itemH;
+      el.style.transform = `translateY(${y.toFixed(1)}px) scale(${Math.max(.55, 1 - dist * .17).toFixed(3)})`;
+      el.style.opacity = Math.max(0, 1 - dist * .42).toFixed(2);
+      const name = nameAt(j);
+      if (el.textContent !== name) el.textContent = name;
+      el.style.fontSize = name.length > 16 ? 'clamp(1.2rem,3vw,2.1rem)' : '';
+    }
+    const v = speed / itemH;
+    layer.style.filter = v > 3.5 ? `blur(${Math.min(5, (v - 3.5) * .38)}px)` : 'none';
+  }
+
+  function frame(t) {
+    if (!lastT) lastT = t;
+    const dt = Math.min(.05, (t - lastT) / 1000); lastT = t;
+    const vmax = VMAX_ITEMS * itemH;
+
+    if (phase === 'accel') {
+      speed = Math.min(speed + (vmax / .7) * dt, vmax);
+      offset += speed * dt;
+      if (speed >= vmax) phase = 'cruise';
+    } else if (phase === 'cruise') {
+      offset += speed * dt;
+    } else if (phase === 'landing') {
+      const p = Math.min(1, (t - landing.t0) / landing.dur);
+      const e = 1 - Math.pow(1 - p, 5);
+      offset = landing.from + (landing.target - landing.from) * e;
+      speed = (landing.target - landing.from) * 5 * Math.pow(1 - p, 4) / landing.dur * 1000;
+      if (p >= 1) { phase = 'settle'; landing.t1 = t; speed = 0; }
+    } else if (phase === 'settle') {
+      const q = (t - landing.t1) / 480;
+      if (q >= 1) {
+        offset = landing.target; draw();
+        phase = 'done'; cancelAnimationFrame(raf); raf = 0;
+        clearTimeout(watchdog); watchdog = 0;
+        setTimeout(() => onLanded && onLanded(), 300);
+        return;
+      }
+      offset = landing.target + Math.sin(q * Math.PI * 2.2) * (1 - q) * itemH * .07;
+    }
+
+    const idx = Math.floor(offset / itemH);
+    if (idx !== lastIdx) {
+      lastIdx = idx;
+      if (t - lastTickAt > 62) { lastTickAt = t; Sound.tick(); }
+    }
+    draw();
+    if (raf) raf = requestAnimationFrame(frame);
+  }
+
+  return {
+    get busy() { return phase !== 'idle' && phase !== 'done'; },
+    setStrip,
+    start() {
+      if (this.busy) return;
+      measure();
+      $('winnerBox').style.display = 'none';
+      $('reelIdle').style.display = 'none';
+      reel.classList.remove('won'); reel.classList.add('spin');
+      stage.classList.add('hot');
+      layer.style.opacity = '1';
+      landing = null; offset = 0; speed = 0; lastT = 0; lastIdx = 0;
+      startedAt = performance.now(); phase = 'accel';
+      raf = requestAnimationFrame(frame);
+    },
+    land(winner, cb) {
+      onLanded = cb;
+      const go = () => {
+        if (phase !== 'accel' && phase !== 'cruise') return;
+        const index = Math.floor(offset / itemH) + 17 + Math.floor(Math.random() * 3);
+        landing = { index, winner, from: offset, target: index * itemH, t0: performance.now(), dur: 2350 + Math.random() * 350 };
+        phase = 'landing';
+      };
+      const wait = Math.max(0, MIN_CRUISE - (performance.now() - startedAt));
+      setTimeout(go, wait);
+      // Watchdog: rAF stalls in hidden tabs — never let the reveal hang.
+      clearTimeout(watchdog);
+      watchdog = setTimeout(() => {
+        if (phase === 'done' || phase === 'idle') return;
+        if (!landing) {
+          const index = Math.floor(offset / itemH) + 1;
+          landing = { index, winner, from: offset, target: index * itemH };
+        }
+        cancelAnimationFrame(raf); raf = 0; phase = 'done';
+        offset = landing.target; speed = 0; layer.style.filter = 'none'; draw();
+        onLanded && onLanded();
+      }, wait + 4600);
+    },
+    stop(idleText = '؟؟؟') {
+      cancelAnimationFrame(raf); raf = 0; phase = 'idle'; landing = null;
+      clearTimeout(watchdog); watchdog = 0;
+      layer.style.filter = 'none'; layer.style.opacity = '1';
+      slots.forEach(s => { s.textContent = ''; s.style.opacity = '0'; });
+      reel.classList.remove('spin', 'won'); stage.classList.remove('hot');
+      $('reelIdle').textContent = idleText; $('reelIdle').style.display = 'grid';
+      $('winnerBox').style.display = 'none';
+    },
+  };
+})();
+
+/* ================= Winner reels ================= */
+let winnerReels = [], winnerReelsName = '';
+function openReels() {
+  if (!winnerReels.length) return;
+  $('reelsWho').textContent = winnerReelsName;
+  $('reelsList').innerHTML = winnerReels.map((u, i) => `
+    <a class="reel-link" href="${esc(u)}" target="_blank" rel="noopener">
+      <span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.5"/><path d="M2 7h20M7 2l3 5M13 2l3 5"/><path d="m10 12 5 3-5 3z"/></svg></span>
+      <span><span class="tar">ريل ${['١','٢','٣'][i] || i + 1}</span><span class="ten">Reel ${i + 1}</span></span>
+      <span class="url">${esc(u.replace(/^https?:\/\//, ''))}</span>
+    </a>`).join('');
+  $('reelsOverlay').classList.add('on');
+}
+$('reelsBtn').addEventListener('click', openReels);
+$('reelsClose').addEventListener('click', () => $('reelsOverlay').classList.remove('on'));
+$('reelsOverlay').addEventListener('click', (e) => { if (e.target === $('reelsOverlay')) $('reelsOverlay').classList.remove('on'); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('reelsOverlay').classList.remove('on'); });
+
+/* ================= Reveal sequence ================= */
+const maskPhone = (p) => { p = String(p || ''); return p.length > 5 ? p.slice(0, 3) + '•'.repeat(p.length - 5) + p.slice(-2) : p; };
+
+function reveal(winner) {
+  const fin = () => {
+    $('reel').classList.remove('spin'); $('reel').classList.add('won');
+    $('stage').classList.remove('hot');
+    $('reelSpin').style.opacity = '0';   // hide reel names so the winner stands alone
+    const fl = $('flash'); fl.classList.remove('go'); void fl.offsetWidth; fl.classList.add('go');
+    const st = $('stage'); st.classList.remove('shake'); void st.offsetWidth; st.classList.add('shake');
+    const wn = $('winnerName');
+    wn.textContent = winner.name;
+    wn.style.fontSize = winner.name.length > 18 ? 'clamp(1.6rem,3.8vw,2.8rem)' : '';
+    $('winnerPhone').textContent = maskPhone(winner.phone);
+    winnerReels = winner.reels || []; winnerReelsName = winner.name;
+    $('reelsBtn').style.display = winnerReels.length ? 'inline-flex' : 'none';
+    $('winnerBox').style.display = 'flex';
+    Sound.fanfare();
+    fireConfetti();
+    refreshState();
+  };
+  if (Reel.busy) Reel.land(winner.name, fin);
+  else { Reel.start(); Reel.land(winner.name, fin); }
+}
+
+/* ================= Countdown 3·2·1 ================= */
+function countdown() {
+  return new Promise((res) => {
+    const ov = $('countdown'), num = $('cdNum');
+    ov.classList.add('on');
+    let n = 3;
+    (function step() {
+      if (n === 0) { ov.classList.remove('on'); return res(); }
+      num.textContent = n; Sound.beep(n === 1);
+      num.classList.remove('pop'); void num.offsetWidth; num.classList.add('pop');
+      n--; setTimeout(step, 850);
+    })();
+  });
+}
+
+/* ================= Boot + state ================= */
+async function boot() {
+  const me = await api.get('/api/auth/me');
+  isAdmin = !!me.admin;
+  if (!isAdmin) { $('controls').style.display = 'none'; $('authHint').style.display = 'block'; $('drawPick').style.display = 'none'; }
+  else {
+    const { items } = await api.get('/api/draw/campaigns');
+    const sel = $('drawPick');
+    sel.innerHTML = items.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    currentCid = (items.find(c => c.active) || items[0])?.id || null;
+    sel.value = String(currentCid);
+    sel.addEventListener('change', async () => { currentCid = parseInt(sel.value, 10); pool = []; Reel.stop(); await refreshState(); });
+  }
+  await refreshState();
+}
+
+async function refreshState() {
+  const s = await api.get('/api/draw/state' + cid());
+  if (s.error) return;
+  $('storeName').textContent = s.campaign.storeName;
+  $('sub').textContent = `${s.campaign.storeHandle} · ${s.campaign.name}`;
+  $('prizeName').textContent = s.campaign.prize;
+  $('wTotal').textContent = s.campaign.prizeCount;
+  renderWinners(s.winners);
+  if (isAdmin) {
+    const ps = await api.get('/api/draw/pool-sample' + cid());
+    pool = ps.names || [];
+  }
+}
+
+function renderWinners(winners) {
+  $('wCount').textContent = winners.length;
+  const last = winners.length;
+  $('winnersRow').innerHTML = winners.map((w, i) => `
+    <div class="winner-card${w.rank === last ? ' latest' : ''}" style="animation-delay:${i * 70}ms">
+      <div class="rank">${w.rank}</div>
+      <div style="font-weight:700;font-size:1.15rem;">${esc(w.name)}</div>
+    </div>`).join('');
+}
+
+/* ================= Admin actions ================= */
+let rollBusy = false;
+$('rollBtn').addEventListener('click', async () => {
+  if (rollBusy || Reel.busy) return;
+  rollBusy = true; $('rollBtn').disabled = true;
+  try {
+    if (!pool.length) { const ps = await api.get('/api/draw/pool-sample' + cid()); pool = ps.names || []; }
+    await countdown();
+    Reel.setStrip(pool);
+    Reel.start();
+    const r = await api.post('/api/draw/roll' + cid());
+    if (r.ok) reveal(r.data.winner);
+    else {
+      Reel.stop();
+      const err = r.data?.error;
+      toast(err === 'winners-complete' ? (isEn() ? 'All winners drawn' : 'اكتمل عدد الفائزين')
+          : err === 'pool-empty' ? (isEn() ? 'No eligible participants' : 'لا يوجد مشاركون مؤهلون')
+          : (isEn() ? 'Error' : 'حدث خطأ'), true);
+    }
+  } finally { rollBusy = false; $('rollBtn').disabled = false; }
+});
+
+$('nextBtn').addEventListener('click', () => { if (!Reel.busy) Reel.stop(); });
+
+$('resetBtn').addEventListener('click', async () => {
+  if (!confirm(isEn() ? 'Reset all winners for this campaign?' : 'إعادة ضبط جميع الفائزين لهذه الحملة؟')) return;
+  await api.post('/api/draw/reset' + cid());
+  await refreshState();
+  Reel.stop();
+});
+
+/* ================= WS sync (projector screens + viewer counter) ================= */
+connectWS((m) => {
+  if (m.type === 'hello' || m.type === 'presence') { Viewers.set(m.clients); return; }
+  if (m.campaignId && currentCid && m.campaignId !== currentCid) return;
+  if (m.type === 'draw:rolling' && !Reel.busy && !rollBusy) {
+    if (m.names?.length) Reel.setStrip(m.names); else Reel.setStrip(pool);
+    Reel.start();
+  } else if (m.type === 'draw:winner') {
+    if (!rollBusy) reveal(m.winner);   // admin screen reveals via the API response
+  } else if (m.type === 'draw:reset') { refreshState(); Reel.stop(); }
+});
+
+/* ================= Confetti: cannons + gold rain ================= */
+const canvas = $('confetti');
+function fireConfetti() {
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight;
+  const W = canvas.width, H = canvas.height;
+  const cols = ['#af6a16', '#deaa5d', '#5f3d2a', '#c98a1e', '#fbe7bd', '#8f5411', '#fffaf0'];
+  const parts = [];
+  const col = () => cols[Math.floor(Math.random() * cols.length)];
+
+  function burst(x, y, n, angle, spread, power) {
+    for (let i = 0; i < n; i++) {
+      const a = angle + (Math.random() - .5) * spread;
+      const v = power * (.5 + Math.random() * .6);
+      parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+        w: Math.random() * 8 + 4, h: Math.random() * 5 + 3, col: col(),
+        rot: Math.random() * 6, vr: (Math.random() - .5) * .4, ph: Math.random() * 6,
+        star: Math.random() < .18, life: 200 + Math.random() * 80 });
+    }
+  }
+  burst(W / 2, H * .42, 130, -Math.PI / 2, 2.4, 17);           // center up
+  setTimeout(() => burst(0, H * .75, 90, -Math.PI / 3.4, .9, 21), 240);      // left cannon
+  setTimeout(() => burst(W, H * .75, 90, Math.PI + Math.PI / 3.4, .9, 21), 420); // right cannon
+  const rain = setInterval(() => {
+    for (let i = 0; i < 5; i++) parts.push({ x: Math.random() * W, y: -14,
+      vx: (Math.random() - .5) * 2, vy: Math.random() * 2 + 1.5,
+      w: Math.random() * 6 + 3, h: Math.random() * 4 + 2, col: col(),
+      rot: Math.random() * 6, vr: (Math.random() - .5) * .3, ph: Math.random() * 6,
+      star: Math.random() < .25, life: 260 });
+  }, 90);
+  setTimeout(() => clearInterval(rain), 3600);
+
+  let running = true;
+  setTimeout(() => { running = false; }, 7000);
+  (function anim() {
+    ctx.clearRect(0, 0, W, H);
+    let alive = 0;
+    for (const p of parts) {
+      if (p.life <= 0) continue;
+      p.life--; alive++;
+      p.vy += .32; p.vx *= .992; p.vy *= .992;
+      p.ph += .1; p.x += p.vx + Math.sin(p.ph) * 1.1; p.y += p.vy; p.rot += p.vr;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.globalAlpha = Math.min(1, p.life / 50);
+      ctx.fillStyle = p.col;
+      if (p.star) {
+        ctx.beginPath();
+        for (let k = 0; k < 5; k++) {
+          const a1 = k * 1.257 - Math.PI / 2, a2 = a1 + .628;
+          ctx.lineTo(Math.cos(a1) * p.w * .6, Math.sin(a1) * p.w * .6);
+          ctx.lineTo(Math.cos(a2) * p.w * .25, Math.sin(a2) * p.w * .25);
+        }
+        ctx.closePath(); ctx.fill();
+      } else {
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * (0.6 + 0.6 * Math.abs(Math.sin(p.ph))));
+      }
+      ctx.restore();
+    }
+    if (running && alive) requestAnimationFrame(anim);
+    else ctx.clearRect(0, 0, W, H);
+  })();
+}
+
+boot();
+</script>
+</body>
+</html>

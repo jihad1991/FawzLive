@@ -1,0 +1,361 @@
+// Admin API: auth, dashboard stats, participants, campaign setup, winners, settings.
+import { db, getSetting, setSetting } from '../db.js';
+import { hashPassword, verifyPassword, issueSession, clearSession, currentAdmin, requireAdmin } from '../auth.js';
+import { getActiveCampaign, getCampaign, resolveCampaign } from '../services/draw.service.js';
+import { sendWhatsApp, templates } from '../services/whatsapp.js';
+
+export default async function adminRoutes(app) {
+  // ── Auth ──────────────────────────────────────────────
+  app.post('/api/auth/login', async (request, reply) => {
+    const { email, password } = request.body || {};
+    const admin = db.prepare('SELECT * FROM admins WHERE email = ?').get(String(email || '').trim().toLowerCase());
+    if (!admin || !verifyPassword(password || '', admin.password_hash)) {
+      return reply.code(401).send({ error: 'invalid-credentials' });
+    }
+    issueSession(reply, admin.id);
+    return { ok: true, admin: { id: admin.id, email: admin.email, name: admin.name } };
+  });
+
+  app.post('/api/auth/logout', async (request, reply) => {
+    clearSession(reply);
+    return { ok: true };
+  });
+
+  app.get('/api/auth/me', async (request) => {
+    const admin = currentAdmin(request);
+    return admin ? { admin } : { admin: null };
+  });
+
+  // ── Everything below requires an admin session ────────
+  app.register(async (guarded) => {
+    guarded.addHook('preHandler', requireAdmin);
+
+    // Dashboard stats (scoped to the selected draw, else active)
+    guarded.get('/api/admin/stats', async (request) => {
+      const c = resolveCampaign(request.query.campaignId);
+      const cid = c?.id;
+      const total = cid ? db.prepare('SELECT COUNT(*) n FROM participants WHERE campaign_id = ?').get(cid).n : 0;
+      const today = cid ? db.prepare(
+        "SELECT COUNT(*) n FROM participants WHERE campaign_id = ? AND date(created_at) = date('now')").get(cid).n : 0;
+      const winnersCount = cid ? db.prepare('SELECT COUNT(*) n FROM winners WHERE campaign_id = ?').get(cid).n : 0;
+      const draws = db.prepare('SELECT COUNT(DISTINCT campaign_id) n FROM winners').get().n;
+
+      // Registrations over the last 7 days for the bar chart.
+      const rows = db.prepare(
+        `SELECT date(created_at) d, COUNT(*) n FROM participants
+         WHERE campaign_id = ? AND created_at >= date('now','-6 days')
+         GROUP BY date(created_at)`).all(cid || 0);
+      const byDay = Object.fromEntries(rows.map(r => [r.d, r.n]));
+      const chart = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+        chart.push({ date: d, count: byDay[d] || 0 });
+      }
+
+      const recent = cid ? db.prepare(
+        'SELECT id, name, phone, source, created_at FROM participants WHERE campaign_id = ? ORDER BY id DESC LIMIT 6').all(cid) : [];
+
+      // Accepted reels: total reel links submitted across this draw's photographers.
+      const reels = cid
+        ? db.prepare('SELECT COUNT(reel1) + COUNT(reel2) + COUNT(reel3) AS n FROM participants WHERE campaign_id = ?').get(cid).n
+        : 0;
+
+      return { total, today, winnersCount, draws, reels, chart, recent, campaign: c && { id: c.id, name: c.name, prize: c.prize, type: c.type, prizeCount: c.prize_count } };
+    });
+
+    // Participants list (search + pagination), scoped to the selected draw
+    guarded.get('/api/admin/participants', async (request) => {
+      const c = resolveCampaign(request.query.campaignId);
+      if (!c) return { items: [], total: 0, segment: null };
+      const q = String(request.query.q || '').trim();
+      const limit = Math.min(200, parseInt(request.query.limit || '100', 10));
+      const offset = Math.max(0, parseInt(request.query.offset || '0', 10));
+      const where = q ? 'AND (name LIKE @q OR phone LIKE @q)' : '';
+      const params = { cid: c.id, q: `%${q}%`, limit, offset };
+      const items = db.prepare(
+        `SELECT * FROM participants WHERE campaign_id = @cid ${where} ORDER BY id DESC LIMIT @limit OFFSET @offset`).all(params);
+      const total = db.prepare(`SELECT COUNT(*) n FROM participants WHERE campaign_id = @cid ${where}`).get(params).n;
+      return { items, total, segment: c.type, campaignName: c.name };
+    });
+
+    guarded.post('/api/admin/participants', async (request, reply) => {
+      const c = resolveCampaign(request.query.campaignId);
+      if (!c) return reply.code(400).send({ error: 'no-campaign' });
+      const name = String(request.body?.name || '').trim().slice(0, 80);
+      const phone = String(request.body?.phone || '').trim().slice(0, 25);
+      if (!name || !phone) return reply.code(400).send({ error: 'name-and-phone-required' });
+      try {
+        const info = db.prepare(
+          `INSERT INTO participants (campaign_id, name, phone, source, agreed) VALUES (?, ?, ?, 'admin', 1)`
+        ).run(c.id, name, phone);
+        return { ok: true, id: info.lastInsertRowid };
+      } catch (err) {
+        if (String(err.message).includes('UNIQUE')) return reply.code(409).send({ error: 'duplicate-phone' });
+        throw err;
+      }
+    });
+
+    // Single participant profile (details + reels + win history)
+    guarded.get('/api/admin/participants/:id', async (request, reply) => {
+      const p = db.prepare('SELECT * FROM participants WHERE id = ?').get(parseInt(request.params.id, 10));
+      if (!p) return reply.code(404).send({ error: 'not-found' });
+      const c = getCampaign(p.campaign_id);
+      const wins = db.prepare('SELECT prize, rank, received, created_at FROM winners WHERE participant_id = ? ORDER BY created_at DESC').all(p.id);
+      return {
+        participant: p,
+        segment: c?.type,
+        campaignName: c?.name,
+        reels: [p.reel1, p.reel2, p.reel3].filter(Boolean),
+        wins,
+      };
+    });
+
+    guarded.patch('/api/admin/participants/:id', async (request, reply) => {
+      const id = parseInt(request.params.id, 10);
+      const p = db.prepare('SELECT * FROM participants WHERE id = ?').get(id);
+      if (!p) return reply.code(404).send({ error: 'not-found' });
+      const excluded = request.body?.excluded;
+      if (typeof excluded === 'boolean') {
+        db.prepare('UPDATE participants SET excluded = ? WHERE id = ?').run(excluded ? 1 : 0, id);
+      }
+      return { ok: true };
+    });
+
+    guarded.delete('/api/admin/participants/:id', async (request) => {
+      db.prepare('DELETE FROM participants WHERE id = ?').run(parseInt(request.params.id, 10));
+      return { ok: true };
+    });
+
+    // CSV export
+    guarded.get('/api/admin/participants.csv', async (request, reply) => {
+      const c = resolveCampaign(request.query.campaignId);
+      const rows = c ? db.prepare('SELECT name, phone, source, reel1, reel2, reel3, created_at FROM participants WHERE campaign_id = ? ORDER BY id DESC').all(c.id) : [];
+      const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const csv = ['name,phone,source,reel1,reel2,reel3,created_at', ...rows.map(r => [r.name, r.phone, r.source, r.reel1, r.reel2, r.reel3, r.created_at].map(esc).join(','))].join('\n');
+      reply.header('Content-Type', 'text/csv; charset=utf-8');
+      reply.header('Content-Disposition', 'attachment; filename="participants.csv"');
+      return '﻿' + csv; // BOM so Excel reads Arabic correctly
+    });
+
+    // Campaign / draw setup
+    guarded.get('/api/admin/campaign', async () => getActiveCampaign() || {});
+    guarded.put('/api/admin/campaign', async (request) => {
+      const c = getActiveCampaign();
+      const b = request.body || {};
+      const fields = {
+        name: b.name, prize: b.prize,
+        prize_count: b.prize_count != null ? Math.max(1, parseInt(b.prize_count, 10) || 1) : undefined,
+        draw_date: b.draw_date, exclude_prev: b.exclude_prev != null ? (b.exclude_prev ? 1 : 0) : undefined,
+        store_name: b.store_name, store_handle: b.store_handle,
+      };
+      if (c) {
+        const sets = [], vals = [];
+        for (const [k, v] of Object.entries(fields)) if (v !== undefined) { sets.push(`${k} = ?`); vals.push(v); }
+        if (sets.length) { vals.push(c.id); db.prepare(`UPDATE campaigns SET ${sets.join(', ')} WHERE id = ?`).run(...vals); }
+        return getCampaign(c.id);
+      } else {
+        const info = db.prepare(
+          `INSERT INTO campaigns (name, prize, prize_count, draw_date, exclude_prev) VALUES (?, ?, ?, ?, ?)`
+        ).run(fields.name || 'حملة جديدة', fields.prize || 'جائزة', fields.prize_count || 1, fields.draw_date || null, fields.exclude_prev ?? 1);
+        return getCampaign(info.lastInsertRowid);
+      }
+    });
+
+    // ── Multiple draws / campaigns ──────────────────────
+    const VALID_TYPES = ['visitor', 'photographer'];
+
+    guarded.get('/api/admin/campaigns', async () => {
+      const items = db.prepare(
+        `SELECT c.*,
+           (SELECT COUNT(*) FROM participants p WHERE p.campaign_id = c.id) AS participants,
+           (SELECT COUNT(*) FROM winners w WHERE w.campaign_id = c.id)      AS winners
+         FROM campaigns c ORDER BY c.active DESC, c.id DESC`).all();
+      return { items };
+    });
+
+    guarded.post('/api/admin/campaigns', async (request) => {
+      const b = request.body || {};
+      const type = VALID_TYPES.includes(b.type) ? b.type : 'visitor';
+      const total = db.prepare('SELECT COUNT(*) n FROM campaigns').get().n;
+      const info = db.prepare(
+        `INSERT INTO campaigns (name, prize, type, prize_count, draw_date, exclude_prev, active)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        String(b.name || 'سحب جديد').slice(0, 120),
+        String(b.prize || 'جائزة').slice(0, 120),
+        type,
+        Math.max(1, parseInt(b.prize_count, 10) || 1),
+        b.draw_date || null,
+        b.exclude_prev === false ? 0 : 1,
+        total === 0 ? 1 : 0,          // first-ever campaign is active by default
+      );
+      return getCampaign(info.lastInsertRowid);
+    });
+
+    guarded.put('/api/admin/campaigns/:id', async (request, reply) => {
+      const id = parseInt(request.params.id, 10);
+      const c = getCampaign(id);
+      if (!c) return reply.code(404).send({ error: 'not-found' });
+      const b = request.body || {};
+      const fields = {
+        name: b.name, prize: b.prize,
+        type: b.type != null ? (VALID_TYPES.includes(b.type) ? b.type : 'visitor') : undefined,
+        prize_count: b.prize_count != null ? Math.max(1, parseInt(b.prize_count, 10) || 1) : undefined,
+        draw_date: b.draw_date, exclude_prev: b.exclude_prev != null ? (b.exclude_prev ? 1 : 0) : undefined,
+      };
+      const sets = [], vals = [];
+      for (const [k, v] of Object.entries(fields)) if (v !== undefined) { sets.push(`${k} = ?`); vals.push(v); }
+      if (sets.length) { vals.push(id); db.prepare(`UPDATE campaigns SET ${sets.join(', ')} WHERE id = ?`).run(...vals); }
+      return getCampaign(id);
+    });
+
+    guarded.post('/api/admin/campaigns/:id/activate', async (request, reply) => {
+      const id = parseInt(request.params.id, 10);
+      const target = getCampaign(id);
+      if (!target) return reply.code(404).send({ error: 'not-found' });
+      // Only one active draw per segment — activating a visitor draw doesn't
+      // touch the photographer draw, so both cars run in parallel.
+      db.transaction(() => {
+        db.prepare('UPDATE campaigns SET active = 0 WHERE type = ?').run(target.type);
+        db.prepare('UPDATE campaigns SET active = 1 WHERE id = ?').run(id);
+      })();
+      return { ok: true };
+    });
+
+    guarded.delete('/api/admin/campaigns/:id', async (request, reply) => {
+      const id = parseInt(request.params.id, 10);
+      const total = db.prepare('SELECT COUNT(*) n FROM campaigns').get().n;
+      if (total <= 1) return reply.code(400).send({ error: 'cannot-delete-last' });
+      const target = getCampaign(id);
+      if (!target) return reply.code(404).send({ error: 'not-found' });
+      db.transaction(() => {
+        db.prepare('DELETE FROM campaigns WHERE id = ?').run(id); // cascades participants + winners
+        if (target.active) {
+          const next = db.prepare('SELECT id FROM campaigns ORDER BY id DESC LIMIT 1').get();
+          if (next) db.prepare('UPDATE campaigns SET active = 1 WHERE id = ?').run(next.id);
+        }
+      })();
+      return { ok: true };
+    });
+
+    // Winners
+    guarded.get('/api/admin/winners', async (request) => {
+      const c = resolveCampaign(request.query.campaignId);
+      const items = c ? db.prepare('SELECT * FROM winners WHERE campaign_id = ? ORDER BY rank ASC').all(c.id) : [];
+      return { items, segment: c?.type, campaignName: c?.name };
+    });
+
+    guarded.patch('/api/admin/winners/:id', async (request) => {
+      const id = parseInt(request.params.id, 10);
+      if (typeof request.body?.received === 'boolean') {
+        db.prepare('UPDATE winners SET received = ? WHERE id = ?').run(request.body.received ? 1 : 0, id);
+      }
+      return { ok: true };
+    });
+
+    // Notify a winner over WhatsApp
+    guarded.post('/api/admin/winners/:id/notify', async (request, reply) => {
+      const w = db.prepare('SELECT * FROM winners WHERE id = ?').get(parseInt(request.params.id, 10));
+      if (!w) return reply.code(404).send({ error: 'not-found' });
+      const c = getCampaign(w.campaign_id);
+      const r = await sendWhatsApp(w.phone, templates.winner(w.name, c?.name || '', w.prize));
+      if (r.ok) db.prepare('UPDATE winners SET notified = 1 WHERE id = ?').run(w.id);
+      return { ok: r.ok, mock: !!r.mock };
+    });
+
+    // ── Admin users (multi-user management) ─────────────
+    const validEmail = (e) => /^\S+@\S+\.\S+$/.test(e);
+
+    guarded.get('/api/admin/users', async (request) => {
+      const items = db.prepare('SELECT id, email, name, created_at FROM admins ORDER BY id ASC').all();
+      return { items, self: request.admin.id };
+    });
+
+    guarded.post('/api/admin/users', async (request, reply) => {
+      const b = request.body || {};
+      const name = String(b.name || '').trim().slice(0, 80);
+      const email = String(b.email || '').trim().toLowerCase().slice(0, 120);
+      const password = String(b.password || '');
+      if (!name) return reply.code(400).send({ error: 'name-required' });
+      if (!validEmail(email)) return reply.code(400).send({ error: 'email-invalid' });
+      if (password.length < 6) return reply.code(400).send({ error: 'password-short' });
+      try {
+        const info = db.prepare('INSERT INTO admins (email, password_hash, name) VALUES (?, ?, ?)')
+          .run(email, hashPassword(password), name);
+        return { ok: true, id: info.lastInsertRowid };
+      } catch (err) {
+        if (String(err.message).includes('UNIQUE')) return reply.code(409).send({ error: 'email-taken' });
+        throw err;
+      }
+    });
+
+    guarded.put('/api/admin/users/:id', async (request, reply) => {
+      const id = parseInt(request.params.id, 10);
+      const u = db.prepare('SELECT * FROM admins WHERE id = ?').get(id);
+      if (!u) return reply.code(404).send({ error: 'not-found' });
+      const b = request.body || {};
+      const name = String(b.name ?? u.name).trim().slice(0, 80);
+      const email = String(b.email ?? u.email).trim().toLowerCase().slice(0, 120);
+      if (!name) return reply.code(400).send({ error: 'name-required' });
+      if (!validEmail(email)) return reply.code(400).send({ error: 'email-invalid' });
+      if (b.password && String(b.password).length < 6) return reply.code(400).send({ error: 'password-short' });
+      try {
+        db.prepare('UPDATE admins SET name = ?, email = ? WHERE id = ?').run(name, email, id);
+        if (b.password) db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(hashPassword(String(b.password)), id);
+        return { ok: true };
+      } catch (err) {
+        if (String(err.message).includes('UNIQUE')) return reply.code(409).send({ error: 'email-taken' });
+        throw err;
+      }
+    });
+
+    guarded.delete('/api/admin/users/:id', async (request, reply) => {
+      const id = parseInt(request.params.id, 10);
+      if (id === request.admin.id) return reply.code(400).send({ error: 'cannot-delete-self' });
+      const total = db.prepare('SELECT COUNT(*) n FROM admins').get().n;
+      if (total <= 1) return reply.code(400).send({ error: 'cannot-delete-last' });
+      db.prepare('DELETE FROM admins WHERE id = ?').run(id);
+      return { ok: true };
+    });
+
+    // ── Own profile (name/email; password change needs the current one) ──
+    guarded.put('/api/admin/profile', async (request, reply) => {
+      const me = db.prepare('SELECT * FROM admins WHERE id = ?').get(request.admin.id);
+      const b = request.body || {};
+      const name = String(b.name ?? me.name).trim().slice(0, 80);
+      const email = String(b.email ?? me.email).trim().toLowerCase().slice(0, 120);
+      if (!name) return reply.code(400).send({ error: 'name-required' });
+      if (!validEmail(email)) return reply.code(400).send({ error: 'email-invalid' });
+      if (b.newPassword) {
+        if (!verifyPassword(String(b.currentPassword || ''), me.password_hash)) {
+          return reply.code(401).send({ error: 'wrong-password' });
+        }
+        if (String(b.newPassword).length < 6) return reply.code(400).send({ error: 'password-short' });
+      }
+      try {
+        db.prepare('UPDATE admins SET name = ?, email = ? WHERE id = ?').run(name, email, me.id);
+        if (b.newPassword) {
+          db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').run(hashPassword(String(b.newPassword)), me.id);
+        }
+        return { ok: true, admin: { id: me.id, name, email } };
+      } catch (err) {
+        if (String(err.message).includes('UNIQUE')) return reply.code(409).send({ error: 'email-taken' });
+        throw err;
+      }
+    });
+
+    // Settings (store branding + wasender status)
+    guarded.get('/api/admin/settings', async () => {
+      const c = getActiveCampaign();
+      return {
+        store: { name: c?.store_name, handle: c?.store_handle, initial: c?.store_initial },
+        whatsapp: { configured: !!getSetting('wasender_ready', '') || require_env() },
+      };
+    });
+  });
+}
+
+// Whether a Wasender key is configured via env (avoid importing config at top for clarity).
+function require_env() {
+  return !!process.env.WASENDER_API_KEY;
+}

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>مخيم الحاشي · لوحة التحكم</title>
+<link rel="icon" href="assets/hashi-logo-clean.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Poppins:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="css/app.css">
+<style>
+  .shell { display:grid; grid-template-columns:280px 1fr; min-height:100vh; }
+  .side { background:var(--sidebar-bg); border-inline-end:1px solid var(--sidebar-border); padding:24px 18px; display:flex; flex-direction:column; gap:8px; position:sticky; top:0; height:100vh; }
+  .nav-btn { display:flex; align-items:center; gap:12px; padding:11px 13px; border-radius:14px; font-weight:600; font-size:.9rem; width:100%; text-align:start; transition:all .2s ease; background:transparent; color:var(--text-secondary); }
+  .nav-btn:hover { background:var(--sidebar-link-hover-bg); }
+  .nav-btn.active { background:var(--sidebar-link-active-bg); color:var(--poslix-accent-strong); }
+  .topbar { display:flex; align-items:center; justify-content:space-between; padding:20px clamp(20px,3vw,40px); border-bottom:1px solid var(--border-subtle); background:var(--surface-card); position:sticky; top:0; z-index:20; }
+  .kpi-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:18px; }
+  .two-col { display:grid; grid-template-columns:1.6fr 1fr; gap:18px; }
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:start; padding:13px 18px; font-size:.72rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--text-muted); background:var(--surface-card-alt); }
+  td { padding:13px 18px; border-top:1px solid var(--border-subtle); font-size:.9rem; }
+  .pill { font-size:.72rem; font-weight:700; background:var(--surface-chip); color:var(--pill-color); padding:2px 9px; border-radius:999px; }
+  @media (max-width:1180px){ .kpi-grid{ grid-template-columns:repeat(2,1fr);} }
+  @media (max-width:920px){ .two-col{ grid-template-columns:1fr;} }
+  @media (max-width:840px){
+    .shell{ grid-template-columns:1fr;}
+    .side{ position:static; height:auto; flex-direction:row; align-items:center; overflow-x:auto; gap:6px; padding:10px 14px; border-inline-end:none; border-bottom:1px solid var(--sidebar-border);}
+    .side-label,.side-sub{ display:none;}
+    .nav-btn{ flex:0 0 auto; white-space:nowrap; padding:9px 13px; font-size:.82rem;}
+    .nav-btn span:not(.tar):not(.ten){ }
+  }
+</style>
+</head>
+<body data-lang="ar">
+
+<!-- ============ LOGIN ============ -->
+<div id="loginScreen" style="min-height:100vh;display:grid;place-items:center;padding:24px;position:relative;overflow:hidden;">
+  <div style="position:absolute;inset-inline:0;bottom:0;height:210px;background:url('assets/hashi-pattern.png') repeat-x bottom center;background-size:auto 210px;opacity:.5;pointer-events:none;"></div>
+  <div style="width:min(420px,100%);animation:fadeUp .5s ease both;position:relative;">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:16px;margin-bottom:28px;">
+      <div style="background:#fdf4de;border:1px solid rgba(222,170,93,.45);border-radius:22px;padding:18px 26px;box-shadow:var(--shadow-card-light);"><img src="assets/hashi-logo-clean.png" alt="مخيم الحاشي" style="display:block;height:86px;width:auto;"></div>
+      <div style="text-align:center;">
+        <div class="h2" style="margin-bottom:4px;"><span class="tar">نظام السحب على الجوائز</span><span class="ten">Lucky Draw System</span></div>
+        <div class="caption"><span class="tar">تسجيل دخول مدير النظام</span><span class="ten">Administrator sign in</span></div>
+      </div>
+    </div>
+    <div class="card" style="padding:28px;">
+      <label class="small" style="display:block;font-weight:600;color:var(--text-primary);margin-bottom:6px;"><span class="tar">البريد الإلكتروني</span><span class="ten">Email</span></label>
+      <input id="email" class="field" value="info@alhashi.om" style="margin-bottom:18px;">
+      <label class="small" style="display:block;font-weight:600;color:var(--text-primary);margin-bottom:6px;"><span class="tar">كلمة المرور</span><span class="ten">Password</span></label>
+      <input id="password" class="field" type="password" value="demo1234" style="margin-bottom:22px;">
+      <button id="loginBtn" class="btn-primary" style="width:100%;padding:13px;"><span class="tar">تسجيل الدخول</span><span class="ten">Sign in</span></button>
+    </div>
+    <div style="text-align:center;margin-top:20px;">
+      <a href="/" class="caption"><span class="tar">صفحة الاشتراك العامة</span><span class="ten">Public subscription page</span></a>
+    </div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="appScreen" class="shell" style="display:none;">
+  <aside class="side">
+    <div style="display:flex;align-items:center;gap:12px;padding:6px 8px 22px;">
+      <div style="background:#fdf4de;border:1px solid rgba(222,170,93,.45);border-radius:14px;padding:8px 12px;"><img src="assets/hashi-logo-clean.png" alt="مخيم الحاشي" style="display:block;height:40px;"></div>
+    </div>
+    <div class="eyebrow side-label" style="padding:6px 12px;"><span class="tar">القائمة</span><span class="ten">Menu</span></div>
+    <button class="nav-btn active" data-view="dashboard"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span><span class="tar">لوحة التحكم</span><span class="ten">Dashboard</span></span></button>
+    <button class="nav-btn" data-view="participants"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><span><span class="tar">المشاركون</span><span class="ten">Participants</span></span><span class="pill" id="navCount" style="margin-inline-start:auto;">0</span></button>
+    <button class="nav-btn" data-view="setup"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span><span class="tar">إعداد السحب</span><span class="ten">Draw setup</span></span></button>
+    <button class="nav-btn" data-view="winners"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg><span><span class="tar">الفائزون</span><span class="ten">Winners</span></span></button>
+    <a class="nav-btn" href="/live" target="_blank"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span><span class="tar">شاشة السحب</span><span class="ten">Live screen</span></span></a>
+    <button class="nav-btn" data-view="users"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg><span><span class="tar">المستخدمون</span><span class="ten">Users</span></span></button>
+    <button class="nav-btn" data-view="settings"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg><span><span class="tar">الإعدادات</span><span class="ten">Settings</span></span></button>
+    <div class="side-sub" style="margin-top:auto;padding:14px;border-radius:16px;background:var(--surface-muted);border:1px dashed rgba(222,170,93,.45);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="width:8px;height:8px;border-radius:999px;background:var(--status-positive);"></span><span class="caption" style="font-weight:700;color:var(--text-primary);"><span class="tar">النظام فعّال</span><span class="ten">System active</span></span></div>
+      <div class="caption" id="waStatus">—</div>
+    </div>
+  </aside>
+
+  <main style="display:flex;flex-direction:column;min-width:0;">
+    <header class="topbar">
+      <div>
+        <div class="h2" id="pageTitle">لوحة التحكم</div>
+        <div class="caption" id="pageSub" style="margin-top:2px;"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <select id="drawSelect" class="field" style="width:auto;padding:9px 14px;border-radius:999px;font-weight:600;font-size:.82rem;"></select>
+        <button id="langBtn" class="btn-ghost" style="display:flex;align-items:center;gap:7px;padding:9px 14px;border-radius:999px;font-size:.82rem;"><span class="tar">EN</span><span class="ten">عربي</span></button>
+        <button id="meAvatar" title="الملف الشخصي" style="width:40px;height:40px;border-radius:999px;background:var(--poslix-brand);color:#fff;display:grid;place-items:center;font-weight:700;cursor:pointer;transition:box-shadow .2s;">ح</button>
+        <button id="logoutBtn" class="btn-ghost" title="Logout" style="width:40px;height:40px;border-radius:999px;display:grid;place-items:center;">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+        </button>
+      </div>
+    </header>
+    <div id="content" style="padding:clamp(20px,3vw,36px);overflow:auto;flex:1;"></div>
+  </main>
+</div>
+
+<script type="module" src="js/admin.js"></script>
+</body>
+</html>

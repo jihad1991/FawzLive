@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>مخيم الحاشي · اشترك واربح</title>
+<link rel="icon" href="assets/hashi-logo-clean.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&family=Poppins:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="css/app.css">
+<style>
+  /* ============ Stage ============ */
+  .sub-grid { min-height:100vh; display:grid; grid-template-columns:1.1fr .9fr; position:relative; overflow:hidden; color:#fdf4de;
+    background: radial-gradient(circle at 0% -10%, rgba(222,170,93,.22), transparent 52%),
+                radial-gradient(circle at 110% 10%, rgba(175,106,22,.20), transparent 45%),
+                radial-gradient(circle at 50% 120%, rgba(175,106,22,.18), transparent 50%), #2b1a10; }
+  .bg-pattern { position:absolute; inset:-120px; z-index:0; opacity:.05; pointer-events:none;
+    background:url('assets/hashi-pattern.png') repeat; background-size:340px;
+    animation: patternDrift 90s linear infinite; }
+  .bg-rays { position:absolute; left:28%; top:40%; width:min(130vh,1100px); aspect-ratio:1; z-index:0; pointer-events:none;
+    transform:translate(-50%,-50%); opacity:.4;
+    background: conic-gradient(from 0deg,
+      transparent 0deg, rgba(222,170,93,.09) 8deg, transparent 22deg,
+      transparent 80deg, rgba(222,170,93,.07) 92deg, transparent 108deg,
+      transparent 160deg, rgba(222,170,93,.10) 172deg, transparent 188deg,
+      transparent 250deg, rgba(222,170,93,.08) 262deg, transparent 278deg);
+    -webkit-mask: radial-gradient(circle, #000 0%, transparent 68%);
+            mask: radial-gradient(circle, #000 0%, transparent 68%);
+    animation: raysSpin 80s linear infinite; }
+  .vignette { position:absolute; inset:0; z-index:1; pointer-events:none;
+    background: radial-gradient(ellipse at 45% 40%, transparent 55%, rgba(20,11,5,.5) 100%); }
+  #dust { position:absolute; inset:0; width:100%; height:100%; z-index:2; pointer-events:none; }
+
+  /* ============ Hero ============ */
+  .sub-hero { padding:clamp(28px,5vw,64px); display:flex; flex-direction:column; justify-content:center; gap:clamp(18px,3vh,26px); position:relative; z-index:3; overflow:hidden; }
+  .hero-border { position:absolute; inset-inline:0; bottom:0; height:180px; opacity:.16; pointer-events:none;
+    background:url('assets/hashi-pattern.png') repeat-x bottom center; background-size:auto 180px; }
+  .brand-row { display:flex; align-items:center; gap:16px; }
+  .logo-chip { background:#fdf4de; border:1px solid rgba(222,170,93,.5); border-radius:18px; padding:10px 16px;
+    box-shadow:0 18px 44px -18px rgba(0,0,0,.6), 0 0 44px -14px rgba(222,170,93,.35);
+    animation: floatY 5.5s ease-in-out infinite; }
+  .logo-chip img { height:clamp(52px,7vh,72px); display:block; }
+  .gold-text { background:linear-gradient(100deg, #b57a24 8%, #fbe7bd 28%, #deaa5d 46%, #fff3d6 58%, #c98a1e 78%);
+    background-size:220% 100%; -webkit-background-clip:text; background-clip:text; color:transparent;
+    animation: shimmer 4.5s linear infinite; }
+  .seg-eyebrow { text-transform:uppercase; letter-spacing:.32em; font-size:.74rem; font-weight:700;
+    color:var(--poslix-accent-highlight); display:flex; align-items:center; gap:12px; }
+  .seg-eyebrow::after { content:''; flex:0 0 clamp(30px,5vw,60px); height:1px;
+    background:linear-gradient(90deg, rgba(222,170,93,.8), transparent); }
+  .hero-title { font-weight:900; font-size:clamp(2rem,4.4vw,3.4rem); line-height:1.1; }
+  .hero-prize { font-weight:900; font-size:clamp(1.5rem,3.2vw,2.5rem); line-height:1.2; margin-top:6px;
+    filter:drop-shadow(0 4px 22px rgba(222,170,93,.3)); }
+
+  /* Countdown to draw */
+  .cd-label { font-size:.78rem; letter-spacing:.22em; text-transform:uppercase; color:rgba(253,244,222,.55); font-weight:700; margin-bottom:10px; }
+  .cd-row { display:flex; gap:10px; direction:ltr; justify-content:flex-end; }
+  [dir="rtl"] .cd-row { justify-content:flex-start; }
+  .cd-tile { min-width:clamp(58px,7vw,76px); padding:10px 8px 8px; text-align:center; border-radius:16px;
+    background:linear-gradient(165deg, rgba(222,170,93,.16), rgba(255,255,255,.02));
+    border:1px solid rgba(222,170,93,.35); box-shadow: inset 0 1px 0 rgba(255,255,255,.08); }
+  .cd-num { font-family:'Poppins',sans-serif; font-weight:800; font-size:clamp(1.5rem,2.6vw,2rem); line-height:1; color:#fbe7bd;
+    text-shadow:0 0 20px rgba(222,170,93,.45); }
+  .cd-num.tick { animation: numPop .35s ease; }
+  .cd-unit { font-size:.68rem; opacity:.55; margin-top:5px; font-weight:700; }
+
+  /* Stats */
+  .stat-row { display:flex; gap:14px; flex-wrap:wrap; }
+  .stat-box { padding:16px 24px; border-radius:18px; text-align:center; min-width:112px; position:relative; overflow:hidden;
+    background:linear-gradient(160deg,rgba(255,255,255,.08),rgba(255,255,255,.02)); border:1px solid rgba(222,170,93,.22); }
+  .stat-box .num { font-family:'Poppins',sans-serif; font-weight:800; font-size:1.9rem; line-height:1; }
+  .stat-box .num.hot { color:var(--poslix-accent-highlight); text-shadow:0 0 22px rgba(222,170,93,.5); }
+  .stat-box .lbl { opacity:.6; font-size:.76rem; margin-top:6px; }
+  .stat-box.pulse { animation: statPulse .6s ease; }
+
+  /* Live join ticker */
+  .join-ticker { position:absolute; bottom:22px; inset-inline-start:clamp(28px,5vw,64px); z-index:4;
+    display:flex; align-items:center; gap:10px; padding:9px 18px; border-radius:999px; max-width:78%;
+    background:rgba(43,26,16,.85); border:1px solid rgba(222,170,93,.4); backdrop-filter:blur(8px);
+    box-shadow:0 14px 40px -14px rgba(0,0,0,.7); font-size:.85rem; font-weight:700;
+    opacity:0; transform:translateY(14px); transition:.45s cubic-bezier(.18,1.1,.3,1); pointer-events:none; }
+  .join-ticker.on { opacity:1; transform:translateY(0); }
+  .join-ticker .dot { width:8px; height:8px; border-radius:999px; background:#4ade80; flex:0 0 auto;
+    box-shadow:0 0 12px rgba(74,222,128,.8); animation: livePing2 1.4s ease-out infinite; }
+
+  /* ============ Form panel ============ */
+  .form-col { padding:clamp(24px,4vw,48px); display:flex; align-items:center; justify-content:center; position:relative; z-index:3; }
+  .panel { width:min(440px,100%); position:relative; background:rgba(43,26,16,.62); backdrop-filter:blur(18px);
+    border:1px solid rgba(222,170,93,.3); border-radius:24px; box-shadow:var(--shadow-strong), 0 0 70px -30px rgba(222,170,93,.3);
+    padding:32px 30px; }
+  .panel .corner { position:absolute; width:22px; height:22px; border:2px solid rgba(222,170,93,.7); }
+  .panel .p1 { top:9px; right:9px; border-left:0; border-bottom:0; border-radius:0 12px 0 0; }
+  .panel .p2 { top:9px; left:9px; border-right:0; border-bottom:0; border-radius:12px 0 0 0; }
+  .panel .p3 { bottom:9px; right:9px; border-left:0; border-top:0; border-radius:0 0 12px 0; }
+  .panel .p4 { bottom:9px; left:9px; border-right:0; border-top:0; border-radius:0 0 0 12px; }
+
+  .seg-toggle { position:relative; display:flex; gap:0; background:rgba(28,16,8,.6); border:1px solid rgba(222,170,93,.24);
+    border-radius:16px; padding:6px; margin-bottom:22px; }
+  .seg-ind { position:absolute; top:6px; bottom:6px; border-radius:11px; background:linear-gradient(135deg,#deaa5d,#af6a16);
+    box-shadow:0 8px 22px -8px rgba(222,170,93,.7); transition: left .35s cubic-bezier(.22,1,.36,1), width .35s cubic-bezier(.22,1,.36,1); }
+  .seg-btn { flex:1; position:relative; z-index:1; padding:12px; border-radius:11px; font-weight:700; font-size:.9rem;
+    color:rgba(253,244,222,.7); background:transparent; transition:color .3s; }
+  .seg-btn.on { color:#2b1a10; }
+
+  .dark-field { width:100%; padding:13px 15px; border-radius:14px; border:1px solid rgba(222,170,93,.32);
+    background:rgba(28,16,8,.55); color:#fdf4de; font-size:1rem; margin-bottom:14px; outline:none; transition:.25s; }
+  .dark-field:focus { border-color:var(--poslix-accent-highlight); background:rgba(28,16,8,.8);
+    box-shadow:0 0 0 3px rgba(222,170,93,.15), 0 0 24px -8px rgba(222,170,93,.4); }
+  .dark-field::placeholder { color:rgba(253,244,222,.35); }
+  .reel-label { display:flex; align-items:center; gap:6px; font-weight:600; font-size:.8rem; margin-bottom:6px; opacity:.85; }
+
+  #reelBlock { overflow:hidden; max-height:0; opacity:0; transition:max-height .5s cubic-bezier(.22,1,.36,1), opacity .4s; }
+  #reelBlock.open { max-height:320px; opacity:1; }
+
+  .submit-btn { position:relative; overflow:hidden; width:100%; padding:16px; border-radius:16px; font-size:1.05rem;
+    background:linear-gradient(135deg,#deaa5d,#af6a16); color:#2b1a10; font-weight:800;
+    box-shadow:0 18px 40px -16px rgba(222,170,93,.7); transition: transform .2s, opacity .2s;
+    animation: btnBreath 2.8s ease-in-out infinite; }
+  .submit-btn:hover:not(:disabled) { transform:translateY(-2px) scale(1.01); }
+  .submit-btn:disabled { opacity:.55; animation:none; cursor:default; }
+  .submit-btn::after { content:''; position:absolute; top:0; bottom:0; width:40%; left:-60%; transform:skewX(-20deg);
+    background:linear-gradient(90deg, transparent, rgba(255,255,255,.5), transparent);
+    animation: sheen 2.8s ease-in-out infinite; }
+
+  /* Success */
+  #doneView { display:none; text-align:center; padding:14px 0; position:relative; }
+  #doneCanvas { position:absolute; inset:-60px; width:calc(100% + 120px); height:calc(100% + 120px); pointer-events:none; }
+  .check-ring { width:84px; height:84px; border-radius:999px; margin:0 auto 18px; display:grid; place-items:center; position:relative;
+    background:radial-gradient(circle, rgba(222,170,93,.25), rgba(222,170,93,.06));
+    border:2px solid rgba(222,170,93,.6); box-shadow:0 0 46px -8px rgba(222,170,93,.55);
+    animation: popIn .5s cubic-bezier(.18,1.2,.3,1) both; }
+  .check-ring svg path { stroke-dasharray:30; stroke-dashoffset:30; animation: drawCheck .55s .35s ease forwards; }
+  .done-rank { display:inline-flex; align-items:center; gap:8px; margin-top:14px; padding:9px 20px; border-radius:999px;
+    background:rgba(222,170,93,.14); border:1px solid rgba(222,170,93,.4); font-weight:800; font-size:1rem;
+    animation: fadeUp .5s .5s ease both; }
+  .done-rank .n { font-family:'Poppins',sans-serif; color:#fbe7bd; }
+
+  /* Entrance stagger */
+  .in { opacity:0; animation: riseIn .7s cubic-bezier(.18,1,.3,1) forwards; }
+  .in-1 { animation-delay:.05s; } .in-2 { animation-delay:.15s; } .in-3 { animation-delay:.28s; }
+  .in-4 { animation-delay:.4s; } .in-5 { animation-delay:.52s; }
+
+  /* ============ Keyframes ============ */
+  @keyframes patternDrift { from { background-position:0 0; } to { background-position:340px 680px; } }
+  @keyframes raysSpin { to { transform:translate(-50%,-50%) rotate(360deg); } }
+  @keyframes floatY { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-8px); } }
+  @keyframes shimmer { from { background-position:220% 0; } to { background-position:-220% 0; } }
+  @keyframes btnBreath { 0%,100% { box-shadow:0 18px 40px -16px rgba(222,170,93,.7); } 50% { box-shadow:0 18px 54px -10px rgba(222,170,93,.95); } }
+  @keyframes sheen { 0%, 55% { left:-60%; } 90%, 100% { left:130%; } }
+  @keyframes numPop { 0% { transform:scale(1); } 40% { transform:scale(1.22); color:#fff3d6; } 100% { transform:scale(1); } }
+  @keyframes statPulse { 0% { box-shadow:0 0 0 0 rgba(222,170,93,.5); } 100% { box-shadow:0 0 0 16px rgba(222,170,93,0); } }
+  @keyframes livePing2 { 0% { box-shadow:0 0 0 0 rgba(74,222,128,.6); } 100% { box-shadow:0 0 0 10px rgba(74,222,128,0); } }
+  @keyframes riseIn { from { opacity:0; transform:translateY(22px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes drawCheck { to { stroke-dashoffset:0; } }
+
+  @media (max-width:920px){
+    .sub-grid { grid-template-columns:1fr; }
+    .sub-hero { padding:36px 26px 10px; }
+    .bg-rays { left:50%; top:22%; }
+    .join-ticker { display:none; }
+  }
+</style>
+</head>
+<body data-lang="ar">
+<div class="sub-grid">
+  <div class="bg-pattern"></div>
+  <div class="bg-rays"></div>
+  <div class="vignette"></div>
+  <canvas id="dust"></canvas>
+
+  <!-- HERO -->
+  <div class="sub-hero">
+    <div class="hero-border"></div>
+
+    <div class="brand-row in in-1">
+      <div class="logo-chip"><img src="assets/hashi-logo-live.png" alt="مخيم الحاشي"></div>
+      <div>
+        <div style="font-weight:700;font-size:1.05rem;" id="storeName">مخيم الحاشي</div>
+        <div style="opacity:.6;font-size:.8rem;direction:ltr;" id="storeHandle">@mokhayam.alhashi</div>
+      </div>
+    </div>
+
+    <div class="in in-2">
+      <div class="seg-eyebrow" id="segTag">سحب الزوّار</div>
+      <div class="hero-title" style="margin-top:10px;"><span class="tar">اشترك واربح</span><span class="ten">Enter to win</span></div>
+      <div class="hero-prize gold-text"><span id="prizeName">—</span></div>
+      <div style="opacity:.6;font-size:.9rem;margin-top:10px;"><span class="tar">سحبان منفصلان: سيارة للزوّار وسيارة للمصوّرين</span><span class="ten">Two separate draws: a car for visitors and a car for photographers</span></div>
+    </div>
+
+    <div class="in in-3" id="cdWrap" style="display:none;">
+      <div class="cd-label"><span class="tar">⏳ ينطلق السحب خلال</span><span class="ten">⏳ Draw starts in</span></div>
+      <div class="cd-row">
+        <div class="cd-tile"><div class="cd-num" id="cdD">0</div><div class="cd-unit"><span class="tar">يوم</span><span class="ten">days</span></div></div>
+        <div class="cd-tile"><div class="cd-num" id="cdH">0</div><div class="cd-unit"><span class="tar">ساعة</span><span class="ten">hrs</span></div></div>
+        <div class="cd-tile"><div class="cd-num" id="cdM">0</div><div class="cd-unit"><span class="tar">دقيقة</span><span class="ten">min</span></div></div>
+        <div class="cd-tile"><div class="cd-num" id="cdS">0</div><div class="cd-unit"><span class="tar">ثانية</span><span class="ten">sec</span></div></div>
+      </div>
+    </div>
+
+    <div class="stat-row in in-4">
+      <div class="stat-box" id="partBox"><div class="num hot" id="totalParticipants">—</div><div class="lbl"><span class="tar">مشترك في هذا الشق</span><span class="ten">entered in this track</span></div></div>
+      <div class="stat-box"><div class="num" id="prizeCount">—</div><div class="lbl"><span class="tar">فائزين</span><span class="ten">winners</span></div></div>
+      <div class="stat-box" id="daysBox" style="display:none;"><div class="num" id="daysLeft">—</div><div class="lbl"><span class="tar">يوم على السحب</span><span class="ten">days to draw</span></div></div>
+    </div>
+
+    <div class="join-ticker" id="joinTicker"><span class="dot"></span><span id="joinText"></span></div>
+  </div>
+
+  <!-- FORM -->
+  <div class="form-col">
+    <div class="panel in in-3">
+      <div class="corner p1"></div><div class="corner p2"></div><div class="corner p3"></div><div class="corner p4"></div>
+
+      <div id="formView">
+        <div class="seg-toggle">
+          <div class="seg-ind" id="segInd"></div>
+          <button class="seg-btn on" data-seg="visitor"><span class="tar">زائر</span><span class="ten">Visitor</span></button>
+          <button class="seg-btn" data-seg="photographer"><span class="tar">مصوّر</span><span class="ten">Photographer</span></button>
+        </div>
+
+        <div style="font-weight:800;font-size:1.2rem;margin-bottom:4px;" id="formTitle"><span class="tar">اشترك في سحب الزوّار</span><span class="ten">Join the visitors' draw</span></div>
+        <div style="opacity:.6;font-size:.84rem;margin-bottom:20px;" id="formHint"><span class="tar">مجاناً · لكل رقم اشتراك واحد</span><span class="ten">Free · one entry per number</span></div>
+
+        <label class="reel-label"><span class="tar">الاسم الكامل</span><span class="ten">Full name</span></label>
+        <input id="regName" class="dark-field" placeholder="—">
+
+        <label class="reel-label"><span class="tar">رقم الهاتف</span><span class="ten">Phone number</span></label>
+        <input id="regPhone" class="dark-field" placeholder="+968 9•• •• ••" style="direction:ltr;text-align:start;" inputmode="tel">
+
+        <!-- Photographer-only reels -->
+        <div id="reelBlock">
+          <label class="reel-label"><span class="tar">روابط ريلز إنستقرام — رابط واحد إلزامي، حتى 3</span><span class="ten">Instagram Reel links — 1 required, up to 3</span></label>
+          <input id="reel1" class="dark-field" placeholder="https://instagram.com/reel/…  ·  1 (مطلوب)" style="direction:ltr;text-align:start;font-size:.9rem;">
+          <input id="reel2" class="dark-field" placeholder="https://instagram.com/reel/…  ·  2 (اختياري)" style="direction:ltr;text-align:start;font-size:.9rem;">
+          <input id="reel3" class="dark-field" placeholder="https://instagram.com/reel/…  ·  3 (اختياري)" style="direction:ltr;text-align:start;font-size:.9rem;">
+        </div>
+
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin:6px 0 20px;">
+          <input type="checkbox" id="regAgree" style="width:18px;height:18px;margin-top:2px;accent-color:var(--poslix-accent);">
+          <span style="font-size:.83rem;opacity:.8;line-height:1.5;"><span class="tar">أوافق على شروط المشاركة واستقبال رسائل واتساب من الراعي</span><span class="ten">I agree to the terms and to receive WhatsApp messages from the sponsor</span></span>
+        </label>
+
+        <button id="submitBtn" class="submit-btn"><span class="tar">اشترك الآن</span><span class="ten">Enter now</span></button>
+        <a href="/admin" style="display:block;text-align:center;margin-top:14px;color:rgba(255,255,255,.5);font-size:.8rem;"><span class="tar">دخول المسؤول</span><span class="ten">Admin sign in</span></a>
+      </div>
+
+      <div id="doneView">
+        <canvas id="doneCanvas"></canvas>
+        <div class="check-ring">
+          <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="#fbe7bd" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        </div>
+        <div style="font-weight:900;font-size:1.35rem;margin-bottom:8px;" class="gold-text"><span class="tar">تم اشتراكك بنجاح</span><span class="ten">You're in</span></div>
+        <div style="opacity:.7;font-size:.95rem;line-height:1.6;max-width:300px;margin:0 auto;"><span class="tar">وصلتك رسالة تأكيد على واتساب. بالتوفيق في السحب!</span><span class="ten">A WhatsApp confirmation is on its way. Good luck!</span></div>
+        <div class="done-rank" id="doneRank" style="display:none;"><span class="tar">أنت المشترك رقم</span><span class="ten">You're entry #</span> <span class="n" id="doneRankNum"></span></div>
+        <button id="againBtn" class="btn-ghost" style="display:block;margin:24px auto 0;padding:11px 22px;border-color:rgba(255,255,255,.18);color:rgba(255,255,255,.8);"><span class="tar">اشتراك آخر</span><span class="ten">Enter again</span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { api, toast, initLang, connectWS, esc } from './js/common.js';
+initLang();
+const $ = (id) => document.getElementById(id);
+const isEn = () => document.body.getAttribute('data-lang') === 'en';
+let segment = 'visitor';
+let drawDate = null;
+
+/* ============ Ambient dust (light for mobile) ============ */
+(() => {
+  const cv = $('dust'), ctx = cv.getContext('2d');
+  const N = matchMedia('(max-width:920px)').matches ? 26 : 46;
+  function size() { cv.width = cv.offsetWidth; cv.height = cv.offsetHeight; }
+  size(); window.addEventListener('resize', size);
+  const mk = () => ({ x: Math.random() * cv.width, y: cv.height + 10 + Math.random() * 60,
+    r: Math.random() * 2 + .6, s: Math.random() * .45 + .15, ph: Math.random() * 6.3, a: Math.random() * .45 + .2 });
+  const parts = Array.from({ length: N }, () => { const p = mk(); p.y = Math.random() * cv.height; return p; });
+  (function loop() {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    for (const p of parts) {
+      p.y -= p.s; p.ph += .012; p.x += Math.sin(p.ph) * .3;
+      if (p.y < -10) Object.assign(p, mk());
+      const tw = .55 + .45 * Math.sin(p.ph * 3);
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7);
+      ctx.fillStyle = `rgba(222,170,93,${(p.a * tw).toFixed(3)})`; ctx.fill();
+    }
+    requestAnimationFrame(loop);
+  })();
+})();
+
+/* ============ Count-up numbers ============ */
+function countUp(el, to, dur = 800) {
+  const from = parseInt(String(el.textContent).replace(/\D/g, ''), 10) || 0;
+  if (from === to) { el.textContent = to; return; }
+  const t0 = performance.now();
+  (function step(t) {
+    const p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(from + (to - from) * e);
+    if (p < 1) requestAnimationFrame(step);
+  })(t0);
+  setTimeout(() => { el.textContent = to; }, dur + 120); // rAF stalls in hidden tabs
+}
+
+/* ============ Live countdown to draw ============ */
+let cdIv = null;
+function startCountdown() {
+  clearInterval(cdIv);
+  if (!drawDate) { $('cdWrap').style.display = 'none'; $('daysBox').style.display = ''; return; }
+  const target = new Date(drawDate + 'T20:00:00').getTime();
+  if (isNaN(target) || target < Date.now()) { $('cdWrap').style.display = 'none'; $('daysBox').style.display = ''; return; }
+  $('cdWrap').style.display = ''; $('daysBox').style.display = 'none';
+  const tiles = { d: $('cdD'), h: $('cdH'), m: $('cdM'), s: $('cdS') };
+  function render() {
+    let ms = Math.max(0, target - Date.now());
+    const d = Math.floor(ms / 86400000); ms -= d * 86400000;
+    const h = Math.floor(ms / 3600000); ms -= h * 3600000;
+    const m = Math.floor(ms / 60000);
+    const s = Math.floor((ms - m * 60000) / 1000);
+    const vals = { d, h, m, s };
+    for (const k in tiles) {
+      const str = String(vals[k]).padStart(2, '0');
+      if (tiles[k].textContent !== str) {
+        tiles[k].textContent = str;
+        tiles[k].classList.remove('tick'); void tiles[k].offsetWidth; tiles[k].classList.add('tick');
+      }
+    }
+  }
+  render();
+  cdIv = setInterval(render, 1000);
+}
+
+/* ============ Hero data ============ */
+async function loadHero() {
+  const c = await api.get('/api/campaign?segment=' + segment);
+  if (c.error) { $('prizeName').textContent = isEn() ? 'Not available' : 'غير متاح'; return; }
+  $('storeName').textContent = c.storeName;
+  $('storeHandle').textContent = c.storeHandle;
+  $('prizeName').textContent = c.prizeName;
+  $('prizeCount').textContent = c.prizeCount;
+  $('daysLeft').textContent = c.daysLeft;
+  countUp($('totalParticipants'), c.totalParticipants);
+  $('segTag').textContent = segment === 'photographer' ? 'سحب المصوّرين' : 'سحب الزوّار';
+  drawDate = c.drawDate;
+  startCountdown();
+}
+
+/* ============ Segment toggle (sliding indicator) ============ */
+function moveInd() {
+  const btn = document.querySelector(`.seg-btn[data-seg="${segment}"]`);
+  const ind = $('segInd');
+  if (btn) { ind.style.left = btn.offsetLeft + 'px'; ind.style.width = btn.offsetWidth + 'px'; }
+}
+window.addEventListener('resize', moveInd);
+
+function applySegment() {
+  document.querySelectorAll('.seg-btn').forEach(b => b.classList.toggle('on', b.dataset.seg === segment));
+  $('reelBlock').classList.toggle('open', segment === 'photographer');
+  $('formTitle').innerHTML = segment === 'photographer'
+    ? '<span class="tar">اشترك في سحب المصوّرين</span><span class="ten">Join the photographers\' draw</span>'
+    : '<span class="tar">اشترك في سحب الزوّار</span><span class="ten">Join the visitors\' draw</span>';
+  $('formHint').innerHTML = segment === 'photographer'
+    ? '<span class="tar">أرفق حتى 3 روابط ريلز إنستقرام للمشاركة</span><span class="ten">Attach up to 3 Instagram Reel links to enter</span>'
+    : '<span class="tar">مجاناً · لكل رقم اشتراك واحد</span><span class="ten">Free · one entry per number</span>';
+  moveInd();
+  loadHero();
+}
+document.querySelectorAll('.seg-btn').forEach(b => b.addEventListener('click', () => { segment = b.dataset.seg; applySegment(); }));
+
+/* ============ Live joins (WS) ============ */
+let tickerTo = null;
+connectWS((m) => {
+  if (m.type !== 'participant:new' || m.segment !== segment) return;
+  countUp($('totalParticipants'), m.count, 600);
+  const box = $('partBox');
+  box.classList.remove('pulse'); void box.offsetWidth; box.classList.add('pulse');
+  if (m.name) {
+    $('joinText').innerHTML = (isEn() ? '<b>' + esc(m.name) + '</b> just entered' : 'انضم <b>' + esc(m.name) + '</b> للتو');
+    $('joinTicker').classList.add('on');
+    clearTimeout(tickerTo);
+    tickerTo = setTimeout(() => $('joinTicker').classList.remove('on'), 3200);
+  }
+});
+
+/* ============ Submit ============ */
+$('submitBtn').addEventListener('click', async () => {
+  const name = $('regName').value.trim();
+  const phone = $('regPhone').value.trim();
+  const agree = $('regAgree').checked;
+  if (!name) return toast(isEn() ? 'Enter your name' : 'أدخل اسمك', true);
+  if (phone.replace(/\D/g,'').length < 8) return toast(isEn() ? 'Enter a valid number' : 'أدخل رقماً صحيحاً', true);
+  let reels = [];
+  if (segment === 'photographer') {
+    reels = [$('reel1').value, $('reel2').value, $('reel3').value].map(s => s.trim()).filter(Boolean);
+    if (reels.length === 0) return toast(isEn() ? 'Add at least one Reel link' : 'أضف رابط ريل واحداً على الأقل', true);
+    const isInsta = (u) => /^(https?:\/\/)?(www\.)?(instagram\.com|instagr\.am)\/(reel|reels|p|tv)\/[^/]+/i.test(u);
+    if (!reels.every(isInsta)) return toast(isEn() ? 'Links must be valid Instagram Reels' : 'الروابط يجب أن تكون ريلز إنستقرام صحيحة', true);
+    const norm = reels.map(u => u.replace(/^https?:\/\//i,'').replace(/^www\./i,'').replace(/[?#].*$/,'').replace(/\/+$/,'').toLowerCase());
+    if (new Set(norm).size !== norm.length) return toast(isEn() ? 'The reel links must be different' : 'روابط الريلز يجب أن تكون مختلفة', true);
+  }
+  if (!agree) return toast(isEn() ? 'Please accept the terms' : 'يرجى الموافقة على الشروط', true);
+
+  const btn = $('submitBtn'); btn.disabled = true;
+  const r = await api.post('/api/register', { name, phone, agree, segment, reels, source: 'public' });
+  btn.disabled = false;
+
+  const err = r.data?.error;
+  if (r.ok) {
+    $('formView').style.display = 'none';
+    $('doneView').style.display = 'block';
+    if (r.data.total) { $('doneRank').style.display = 'inline-flex'; $('doneRankNum').textContent = r.data.total.toLocaleString('en-US'); }
+    fireDoneConfetti();
+  }
+  else if (err === 'already-registered') toast(isEn() ? 'This number is already entered' : 'هذا الرقم مسجّل مسبقاً', true);
+  else if (err === 'reel-used') toast(isEn() ? 'One of these reels is already entered' : 'أحد الريلز مُستخدَم في السحب مسبقاً', true);
+  else if (err === 'reel-not-instagram') toast(isEn() ? 'Links must be valid Instagram Reels' : 'الرابط ليس ريل إنستقرام صحيح', true);
+  else if (err === 'reel-duplicate') toast(isEn() ? 'The reel links must be different' : 'روابط الريلز يجب أن تكون مختلفة', true);
+  else if (err === 'reels-required') toast(isEn() ? 'Reel links are required' : 'روابط الريلز مطلوبة', true);
+  else toast(isEn() ? 'Something went wrong' : 'حدث خطأ، حاول مجدداً', true);
+});
+
+$('againBtn').addEventListener('click', () => {
+  ['regName','regPhone','reel1','reel2','reel3'].forEach(id => $(id).value = '');
+  $('regAgree').checked = false;
+  $('doneView').style.display = 'none'; $('formView').style.display = 'block';
+  moveInd();
+  loadHero();
+});
+
+/* ============ Success confetti ============ */
+function fireDoneConfetti() {
+  const cv = $('doneCanvas'), ctx = cv.getContext('2d');
+  cv.width = cv.offsetWidth; cv.height = cv.offsetHeight;
+  const W = cv.width, H = cv.height;
+  const cols = ['#af6a16','#deaa5d','#c98a1e','#fbe7bd','#fffaf0'];
+  const parts = Array.from({ length: 110 }, () => {
+    const a = -Math.PI / 2 + (Math.random() - .5) * 2.6, v = 7 + Math.random() * 8;
+    return { x: W/2, y: H*.28, vx: Math.cos(a)*v, vy: Math.sin(a)*v,
+      w: Math.random()*7+3, h: Math.random()*4+2, col: cols[Math.floor(Math.random()*cols.length)],
+      rot: Math.random()*6, vr: (Math.random()-.5)*.4, ph: Math.random()*6, life: 130+Math.random()*50 };
+  });
+  (function anim(){
+    ctx.clearRect(0,0,W,H);
+    let alive = 0;
+    for (const p of parts) {
+      if (p.life-- <= 0) continue; alive++;
+      p.vy += .28; p.ph += .1; p.x += p.vx + Math.sin(p.ph)*.8; p.y += p.vy; p.rot += p.vr;
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot);
+      ctx.globalAlpha = Math.min(1, p.life/40);
+      ctx.fillStyle = p.col; ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
+      ctx.restore();
+    }
+    if (alive) requestAnimationFrame(anim); else ctx.clearRect(0,0,W,H);
+  })();
+}
+
+applySegment();
+window.addEventListener('load', moveInd);
+</script>
+</body>
+</html>
