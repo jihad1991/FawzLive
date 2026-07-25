@@ -2,7 +2,11 @@
 import { db, getSetting, setSetting } from '../db.js';
 import { hashPassword, verifyPassword, issueSession, clearSession, currentAdmin, requireAdmin } from '../auth.js';
 import { getActiveCampaign, getCampaign, resolveCampaign } from '../services/draw.service.js';
-import { sendWhatsApp, templates } from '../services/whatsapp.js';
+import {
+  sendWhatsApp, templates, waCreds,
+  getTemplate, fillTemplate, autoSendRegistered,
+  TEMPLATE_VARS, DEFAULT_TEMPLATES,
+} from '../services/whatsapp.js';
 
 export default async function adminRoutes(app) {
   // ── Auth ──────────────────────────────────────────────
@@ -345,17 +349,106 @@ export default async function adminRoutes(app) {
     });
 
     // Settings (store branding + wasender status)
+    // The key itself is never returned — only a masked hint.
     guarded.get('/api/admin/settings', async () => {
       const c = getActiveCampaign();
+      const w = waCreds();
       return {
         store: { name: c?.store_name, handle: c?.store_handle, initial: c?.store_initial },
-        whatsapp: { configured: !!getSetting('wasender_ready', '') || require_env() },
+        whatsapp: {
+          configured: w.configured,
+          source: w.source,                                   // 'db' | 'env' | null
+          masked: w.apiKey ? maskKey(w.apiKey) : '',
+          baseUrl: w.baseUrl,
+        },
+        messages: {
+          registered: getTemplate('registered'),
+          winner: getTemplate('winner'),
+          autoRegistered: autoSendRegistered(),
+          vars: TEMPLATE_VARS,
+          defaults: DEFAULT_TEMPLATES,
+        },
       };
+    });
+
+    // Save the WhatsApp message templates.
+    guarded.put('/api/admin/settings/messages', async (request, reply) => {
+      const b = request.body || {};
+      const clean = (v) => String(v).replace(/\r\n/g, '\n').slice(0, 1000);
+
+      for (const kind of ['registered', 'winner']) {
+        if (typeof b[kind] === 'string') {
+          const txt = clean(b[kind]).trim();
+          if (!txt) return reply.code(400).send({ error: 'message-empty', kind });
+          setSetting('msg_' + kind, txt);
+        }
+      }
+      if (typeof b.autoRegistered === 'boolean') {
+        setSetting('msg_registered_on', b.autoRegistered ? '1' : '0');
+      }
+      // `reset: 'registered'|'winner'|'all'` restores the built-in defaults.
+      if (b.reset === 'all' || b.reset === 'registered') setSetting('msg_registered', '');
+      if (b.reset === 'all' || b.reset === 'winner') setSetting('msg_winner', '');
+
+      return {
+        ok: true,
+        registered: getTemplate('registered'),
+        winner: getTemplate('winner'),
+        autoRegistered: autoSendRegistered(),
+      };
+    });
+
+    // Live preview with sample data, rendered by the same engine used at send time.
+    guarded.post('/api/admin/settings/messages/preview', async (request) => {
+      const c = getActiveCampaign();
+      const vars = {
+        name: request.body?.sampleName || 'محمد',
+        campaign: c?.name || 'السحب',
+        prize: c?.prize || 'الجائزة',
+        store: c?.store_name || '',
+      };
+      return {
+        registered: fillTemplate(String(request.body?.registered ?? getTemplate('registered')), vars),
+        winner: fillTemplate(String(request.body?.winner ?? getTemplate('winner')), vars),
+        vars,
+      };
+    });
+
+    // Save (or clear) the Wasender credentials from the UI.
+    guarded.put('/api/admin/settings/whatsapp', async (request, reply) => {
+      const b = request.body || {};
+      const apiKey = typeof b.apiKey === 'string' ? b.apiKey.trim() : undefined;
+      const baseUrl = typeof b.baseUrl === 'string' ? b.baseUrl.trim().replace(/\/+$/, '') : undefined;
+
+      if (baseUrl !== undefined) {
+        if (baseUrl && !/^https:\/\/[\w.-]+/i.test(baseUrl)) {
+          return reply.code(400).send({ error: 'base-url-invalid' });
+        }
+        setSetting('wasender_base_url', baseUrl);
+      }
+      if (apiKey !== undefined) {
+        // An empty string clears the stored key (falls back to .env / mock mode).
+        if (apiKey && apiKey.length < 8) return reply.code(400).send({ error: 'api-key-too-short' });
+        setSetting('wasender_api_key', apiKey);
+      }
+
+      const w = waCreds();
+      return { ok: true, configured: w.configured, source: w.source, masked: w.apiKey ? maskKey(w.apiKey) : '', baseUrl: w.baseUrl };
+    });
+
+    // Send a test message to verify the connection end to end.
+    guarded.post('/api/admin/settings/whatsapp/test', async (request, reply) => {
+      const phone = String(request.body?.phone || '').trim();
+      if (phone.replace(/\D/g, '').length < 8) return reply.code(400).send({ error: 'phone-invalid' });
+      const w = waCreds();
+      const r = await sendWhatsApp(phone, 'رسالة تجريبية من نظام السحب - مخيم الحاشي. الربط يعمل بنجاح.');
+      return { ok: !!r.ok, mock: !!r.mock, configured: w.configured, status: r.status, detail: r.data || r.error || null };
     });
   });
 }
 
-// Whether a Wasender key is configured via env (avoid importing config at top for clarity).
-function require_env() {
-  return !!process.env.WASENDER_API_KEY;
+// Show only the last 4 characters of a secret.
+function maskKey(k) {
+  const s = String(k);
+  return s.length <= 4 ? '••••' : '••••••••' + s.slice(-4);
 }

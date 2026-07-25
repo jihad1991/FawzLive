@@ -4,7 +4,7 @@
 import { db } from '../db.js';
 import { getActiveCampaign } from '../services/draw.service.js';
 import { broadcast } from '../services/hub.js';
-import { sendWhatsApp, templates } from '../services/whatsapp.js';
+import { sendWhatsApp, templates, autoSendRegistered } from '../services/whatsapp.js';
 
 function cleanPhone(phone) {
   return String(phone || '').replace(/[^\d+•\s]/g, '').trim();
@@ -107,9 +107,11 @@ export default async function publicRoutes(app) {
       const count = db.prepare('SELECT COUNT(*) n FROM participants WHERE campaign_id = ?').get(c.id).n;
       broadcast({ type: 'participant:new', segment, campaignId: c.id, count, name });
 
-      sendWhatsApp(phone, templates.registered(name, c.name))
-        .then(r => { if (r.ok && !r.mock) db.prepare('UPDATE participants SET notified = 1 WHERE id = ?').run(info.lastInsertRowid); })
-        .catch(() => {});
+      if (autoSendRegistered()) {
+        sendWhatsApp(phone, templates.registered(name, c.name))
+          .then(r => { if (r.ok && !r.mock) db.prepare('UPDATE participants SET notified = 1 WHERE id = ?').run(info.lastInsertRowid); })
+          .catch(() => {});
+      }
 
       return { ok: true, id: info.lastInsertRowid, total: count, segment };
     } catch (err) {

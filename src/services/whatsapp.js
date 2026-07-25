@@ -1,6 +1,17 @@
 // WhatsApp notifier via Wasender API (https://wasenderapi.com).
-// In dev (no API key) it runs in mock mode: messages are logged, never sent.
+// The API key is configured from the admin Settings page (stored in the
+// settings table) and falls back to WASENDER_API_KEY in .env.
+// With no key at all it runs in mock mode: messages are logged, never sent.
 import { config } from '../config.js';
+import { db, getSetting } from '../db.js';
+
+// Live credentials — DB first (editable from the UI), then .env.
+export function waCreds() {
+  const apiKey = (getSetting('wasender_api_key', '') || config.wasender.apiKey || '').trim();
+  const baseUrl = (getSetting('wasender_base_url', '') || config.wasender.baseUrl || '').trim().replace(/\/+$/, '');
+  const source = getSetting('wasender_api_key', '') ? 'db' : (config.wasender.apiKey ? 'env' : null);
+  return { apiKey, baseUrl, source, configured: !!apiKey };
+}
 
 function normalizePhone(phone) {
   // Wasender expects an international number, digits only (e.g. 9689XXXXXXX).
@@ -17,17 +28,18 @@ export async function sendWhatsApp(phone, text) {
     return { ok: false, mock: true, reason: 'masked-or-empty-number' };
   }
 
-  if (!config.wasender.apiKey) {
+  const { apiKey, baseUrl } = waCreds();
+  if (!apiKey) {
     console.log(`[whatsapp:mock] to ${to}\n${text}\n`);
     return { ok: true, mock: true };
   }
 
   try {
-    const res = await fetch(`${config.wasender.baseUrl}/send-message`, {
+    const res = await fetch(`${baseUrl}/send-message`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.wasender.apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({ to, text }),
     });
@@ -43,12 +55,43 @@ export async function sendWhatsApp(phone, text) {
   }
 }
 
-// Message templates (bilingual — Arabic default).
+// ── Message templates ────────────────────────────────────
+// Editable from the admin Settings page (stored in `settings`), with these
+// defaults as the fallback / "restore defaults" source.
+export const DEFAULT_TEMPLATES = {
+  registered: 'مرحباً {name}\nتم تسجيلك بنجاح في سحب "{campaign}" لدى {store}.\nبالتوفيق.',
+  winner: 'مبروك {name}\nلقد فزت في سحب "{campaign}".\nالجائزة: {prize}.\nيرجى التواصل معنا لاستلامها.',
+};
+
+// Placeholders offered in the UI.
+export const TEMPLATE_VARS = ['name', 'campaign', 'prize', 'store'];
+
+export function getTemplate(kind) {
+  return getSetting('msg_' + kind, '') || DEFAULT_TEMPLATES[kind] || '';
+}
+
+// Replace {placeholders}; unknown ones are left untouched so typos stay visible.
+export function fillTemplate(tpl, vars = {}) {
+  return String(tpl || '').replace(/\{(\w+)\}/g, (m, k) =>
+    Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k] ?? '') : m);
+}
+
+function storeName() {
+  const row = db.prepare('SELECT store_name FROM campaigns WHERE active = 1 ORDER BY id DESC LIMIT 1').get()
+           || db.prepare('SELECT store_name FROM campaigns ORDER BY id DESC LIMIT 1').get();
+  return row?.store_name || '';
+}
+
+// Whether the registration confirmation is sent automatically.
+export function autoSendRegistered() {
+  return getSetting('msg_registered_on', '1') !== '0';
+}
+
 export const templates = {
   registered(name, campaign) {
-    return `مرحباً ${name}\nتم تسجيلك بنجاح في سحب "${campaign}" لدى مخيم الحاشي.\nبالتوفيق.`;
+    return fillTemplate(getTemplate('registered'), { name, campaign, prize: '', store: storeName() });
   },
   winner(name, campaign, prize) {
-    return `مبروك ${name}\nلقد فزت في سحب "${campaign}".\nالجائزة: ${prize}.\nيرجى التواصل معنا لاستلامها.`;
+    return fillTemplate(getTemplate('winner'), { name, campaign, prize, store: storeName() });
   },
 };

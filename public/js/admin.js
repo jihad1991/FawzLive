@@ -32,6 +32,8 @@ const ICON = {
   chat:    svg('<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z"/>', 16),
   check:   svg('<path d="M20 6 9 17l-5-5"/>', 15),
   plus:    svg('<path d="M12 5v14M5 12h14"/>', 16),
+  eye:     svg('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>', 16),
+  eyeOff:  svg('<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-10-8-10-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M1 1l22 22M9.9 9.9a3 3 0 0 0 4.2 4.2"/>', 16),
 };
 
 const SEGMENTS = [
@@ -42,6 +44,15 @@ const segLabel = (v) => {
   const x = SEGMENTS.find(s => s[0] === v) || SEGMENTS[0];
   return `<span style="display:inline-flex;align-items:center;gap:6px;">${ICON[x[3]]}${isEn() ? x[2] : x[1]}</span>`;
 };
+
+// Keep the sidebar WhatsApp status chip in sync.
+async function syncWaStatus() {
+  const st = await api.get('/api/admin/settings');
+  const on = !!st.whatsapp?.configured;
+  const el = $('waStatus');
+  if (el) el.textContent = on ? t('واتساب متصل', 'WhatsApp connected') : t('واتساب: وضع تجريبي', 'WhatsApp: mock mode');
+  return st;
+}
 
 async function populateDrawSelect() {
   const { items } = await api.get('/api/admin/campaigns');
@@ -66,6 +77,7 @@ async function showApp() {
   if (!me) { const r = await api.get('/api/auth/me'); me = r.admin; }
   syncAvatar();
   await populateDrawSelect();
+  syncWaStatus();
   render();
 }
 
@@ -528,7 +540,7 @@ async function renderWinners() {
 // ── Settings ─────────────────────────────────────────────
 async function renderSettings() {
   const c = await api.get('/api/admin/campaign');
-  const st = await api.get('/api/admin/settings');
+  const st = await syncWaStatus();
   const waOn = st.whatsapp?.configured;
   $('content').innerHTML = `
   <div style="display:flex;flex-direction:column;gap:18px;max-width:640px;">
@@ -541,12 +553,73 @@ async function renderSettings() {
       <button id="sSave" class="btn-primary" style="padding:12px 24px;margin-top:18px;">${t('حفظ','Save')}</button>
     </div>
     <div class="card" style="padding:24px;">
-      <div class="h3" style="margin-bottom:8px;">${t('ربط واتساب','WhatsApp integration')}</div>
-      <div style="display:flex;align-items:center;gap:10px;">
-        <span style="width:10px;height:10px;border-radius:999px;background:${waOn ? 'var(--status-positive)' : 'var(--status-warning)'};"></span>
-        <span class="small">${waOn ? t('متصل عبر Wasender API','Connected via Wasender API') : t('وضع تجريبي — أضف مفتاح Wasender في ملف .env','Mock mode — add your Wasender key to .env')}</span>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+        <div class="h3">${t('ربط واتساب','WhatsApp integration')}</div>
+        <span id="waBadge" style="display:inline-flex;align-items:center;gap:7px;padding:5px 13px;border-radius:999px;font-size:.76rem;font-weight:700;
+          background:${waOn ? 'var(--status-positive-soft)' : 'rgba(201,138,30,.16)'};color:${waOn ? 'var(--status-positive-strong)' : 'var(--status-warning)'};">
+          <span style="width:8px;height:8px;border-radius:999px;background:currentColor;"></span>
+          ${waOn ? t('متصل','Connected') : t('وضع تجريبي','Mock mode')}
+        </span>
       </div>
-      <div class="caption" style="margin-top:10px;">wasenderapi.com · ${t('يُرسَل تأكيد تلقائي لكل مشترك، وإشعار لكل فائز','Auto-confirm each entrant, notify each winner')}</div>
+
+      <div class="caption" style="margin-bottom:16px;">
+        ${t('أدخل مفتاح Wasender API لتفعيل الإرسال الفعلي. يُحفظ في قاعدة البيانات ولا يُعرض بعد الحفظ.','Enter your Wasender API key to enable real sending. Stored in the database and never shown again after saving.')}
+        <a href="https://wasenderapi.com" target="_blank" rel="noopener" style="font-weight:600;">wasenderapi.com ${ICON.external}</a>
+      </div>
+
+      <label class="small" style="display:block;font-weight:600;margin-bottom:6px;">${t('مفتاح API','API key')}</label>
+      <div style="display:flex;gap:8px;margin-bottom:14px;">
+        <input id="waKey" class="field" type="password" autocomplete="off" spellcheck="false"
+               placeholder="${st.whatsapp?.masked ? esc(st.whatsapp.masked) + '  ' + t('(محفوظ)','(saved)') : t('الصق المفتاح هنا','Paste your key here')}"
+               style="flex:1;direction:ltr;text-align:start;">
+        <button id="waEye" class="btn-ghost" type="button" style="padding:0 14px;" title="${t('إظهار','Show')}">${ICON.eye}</button>
+      </div>
+
+      <label class="small" style="display:block;font-weight:600;margin-bottom:6px;">${t('رابط الـ API','API base URL')}</label>
+      <input id="waUrl" class="field" value="${esc(st.whatsapp?.baseUrl || 'https://wasenderapi.com/api')}" style="direction:ltr;text-align:start;margin-bottom:18px;">
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button id="waSave" class="btn-primary" style="padding:12px 24px;">${t('حفظ الربط','Save connection')}</button>
+        <button id="waTest" class="btn-ghost" style="padding:12px 20px;">${t('إرسال رسالة تجريبية','Send test message')}</button>
+        ${st.whatsapp?.source === 'db' ? `<button id="waClear" class="btn-ghost" style="padding:12px 18px;color:var(--status-negative);border-color:rgba(192,73,47,.4);">${t('حذف المفتاح','Remove key')}</button>` : ''}
+      </div>
+      ${st.whatsapp?.source === 'env' ? `<div class="caption" style="margin-top:12px;">${t('المفتاح الحالي مقروء من ملف .env — أي مفتاح تحفظه هنا سيَجُبّه.','The current key comes from .env — a key saved here overrides it.')}</div>` : ''}
+    </div>
+
+    <!-- ── Message templates ── -->
+    <div class="card" style="padding:24px;">
+      <div class="h3" style="margin-bottom:6px;">${t('الرسائل النصية','Message templates')}</div>
+      <div class="caption" style="margin-bottom:16px;">${t('نص رسائل واتساب التي تُرسَل للمشتركين والفائزين. اضغط على أي متغيّر لإدراجه.','The WhatsApp text sent to entrants and winners. Click a variable to insert it.')}</div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;" id="varChips">
+        ${(st.messages?.vars || []).map(v => `<button class="varChip btn-ghost" type="button" data-var="{${v}}" style="padding:6px 12px;font-size:.76rem;font-family:var(--font-mono);direction:ltr;">{${v}}</button>`).join('')}
+      </div>
+
+      <label class="small" style="display:flex;align-items:center;justify-content:space-between;gap:10px;font-weight:600;margin-bottom:6px;">
+        <span>${t('رسالة تأكيد التسجيل','Registration confirmation')}</span>
+        <button id="msgResetReg" type="button" class="caption" style="color:var(--poslix-accent-strong);font-weight:600;">${t('استعادة الافتراضي','Restore default')}</button>
+      </label>
+      <textarea id="msgReg" class="field" rows="4" style="resize:vertical;line-height:1.7;margin-bottom:8px;">${esc(st.messages?.registered || '')}</textarea>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:20px;">
+        <input type="checkbox" id="msgAuto" ${st.messages?.autoRegistered ? 'checked' : ''} style="width:18px;height:18px;accent-color:var(--poslix-accent-strong);">
+        <span class="small">${t('إرسال رسالة التأكيد تلقائياً عند كل تسجيل','Send the confirmation automatically on every registration')}</span>
+      </label>
+
+      <label class="small" style="display:flex;align-items:center;justify-content:space-between;gap:10px;font-weight:600;margin-bottom:6px;">
+        <span>${t('رسالة إشعار الفائز','Winner notification')}</span>
+        <button id="msgResetWin" type="button" class="caption" style="color:var(--poslix-accent-strong);font-weight:600;">${t('استعادة الافتراضي','Restore default')}</button>
+      </label>
+      <textarea id="msgWin" class="field" rows="4" style="resize:vertical;line-height:1.7;margin-bottom:16px;">${esc(st.messages?.winner || '')}</textarea>
+
+      <div style="background:var(--surface-muted);border:1px solid var(--border-subtle);border-radius:14px;padding:14px 16px;margin-bottom:18px;">
+        <div class="eyebrow" style="margin-bottom:8px;">${t('معاينة','Preview')}</div>
+        <div id="msgPreview" class="small" style="white-space:pre-wrap;line-height:1.7;color:var(--text-primary);">—</div>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button id="msgSave" class="btn-primary" style="padding:12px 24px;">${t('حفظ الرسائل','Save messages')}</button>
+        <button id="msgPrevBtn" class="btn-ghost" style="padding:12px 20px;">${t('تحديث المعاينة','Refresh preview')}</button>
+      </div>
     </div>
     <div class="card" style="padding:24px;">
       <div class="h3" style="margin-bottom:12px;">${t('روابط سريعة','Quick links')}</div>
@@ -561,7 +634,94 @@ async function renderSettings() {
     const r = await api.put('/api/admin/campaign', { store_name: $('sName').value.trim(), store_handle: $('sHandle').value.trim() });
     if (r.ok) toast(t('تم الحفظ','Saved')); else toast(t('خطأ','Error'), true);
   });
-  $('waStatus').textContent = waOn ? t('واتساب متصل','WhatsApp connected') : t('واتساب: وضع تجريبي','WhatsApp: mock mode');
+
+  // ── WhatsApp connection ──
+  $('waEye').addEventListener('click', () => {
+    const f = $('waKey');
+    const show = f.type === 'password';
+    f.type = show ? 'text' : 'password';
+    $('waEye').innerHTML = show ? ICON.eyeOff : ICON.eye;
+  });
+
+  $('waSave').addEventListener('click', async () => {
+    const key = $('waKey').value.trim();
+    const url = $('waUrl').value.trim();
+    if (!key && !st.whatsapp?.configured) return toast(t('أدخل مفتاح API أولاً','Enter an API key first'), true);
+    const body = { baseUrl: url };
+    if (key) body.apiKey = key;                    // empty = keep the stored key
+    const btn = $('waSave'); btn.disabled = true; btn.style.opacity = '.6';
+    const r = await api.put('/api/admin/settings/whatsapp', body);
+    btn.disabled = false; btn.style.opacity = '1';
+    if (r.ok) { toast(t('تم حفظ الربط','Connection saved')); renderSettings(); }
+    else toast(r.data?.error === 'api-key-too-short' ? t('المفتاح قصير جداً','Key too short')
+             : r.data?.error === 'base-url-invalid' ? t('رابط غير صالح','Invalid URL')
+             : t('خطأ','Error'), true);
+  });
+
+  $('waTest').addEventListener('click', async () => {
+    const phone = prompt(t('رقم الواتساب لإرسال رسالة تجريبية:','WhatsApp number to send a test message:'), '+968');
+    if (!phone) return;
+    const btn = $('waTest'); btn.disabled = true; btn.style.opacity = '.6';
+    const r = await api.post('/api/admin/settings/whatsapp/test', { phone });
+    btn.disabled = false; btn.style.opacity = '1';
+    if (r.ok && r.data?.mock) toast(t('وضع تجريبي — لم تُرسَل رسالة فعلية','Mock mode — no real message sent'), true);
+    else if (r.ok && r.data?.ok) toast(t('تم إرسال الرسالة التجريبية','Test message sent'));
+    else toast(t('فشل الإرسال — تحقق من المفتاح','Send failed — check your key'), true);
+  });
+
+  const waClear = $('waClear');
+  if (waClear) waClear.addEventListener('click', async () => {
+    if (!confirm(t('حذف مفتاح الربط والعودة للوضع التجريبي؟','Remove the key and fall back to mock mode?'))) return;
+    const r = await api.put('/api/admin/settings/whatsapp', { apiKey: '' });
+    if (r.ok) { toast(t('تم حذف المفتاح','Key removed')); renderSettings(); } else toast(t('خطأ','Error'), true);
+  });
+
+  // ── Message templates ──
+  let lastFocused = $('msgReg');
+  [$('msgReg'), $('msgWin')].forEach(el => el.addEventListener('focus', () => { lastFocused = el; }));
+
+  // Insert a {variable} at the caret of whichever textarea was last focused.
+  document.querySelectorAll('.varChip').forEach(chip => chip.addEventListener('click', () => {
+    const el = lastFocused || $('msgReg');
+    const v = chip.dataset.var;
+    const s = el.selectionStart ?? el.value.length, e = el.selectionEnd ?? s;
+    el.value = el.value.slice(0, s) + v + el.value.slice(e);
+    el.focus();
+    el.selectionStart = el.selectionEnd = s + v.length;
+    refreshPreview();
+  }));
+
+  async function refreshPreview() {
+    const r = await api.post('/api/admin/settings/messages/preview', {
+      registered: $('msgReg').value, winner: $('msgWin').value,
+    });
+    if (!r.ok) return;
+    $('msgPreview').textContent =
+      `— ${t('التسجيل','Registration')} —\n${r.data.registered}\n\n— ${t('الفائز','Winner')} —\n${r.data.winner}`;
+  }
+  let prevTimer;
+  [$('msgReg'), $('msgWin')].forEach(el => el.addEventListener('input', () => {
+    clearTimeout(prevTimer); prevTimer = setTimeout(refreshPreview, 350);
+  }));
+  $('msgPrevBtn').addEventListener('click', refreshPreview);
+  refreshPreview();
+
+  $('msgSave').addEventListener('click', async () => {
+    const registered = $('msgReg').value.trim(), winner = $('msgWin').value.trim();
+    if (!registered || !winner) return toast(t('لا يمكن ترك الرسالة فارغة','Message cannot be empty'), true);
+    const btn = $('msgSave'); btn.disabled = true; btn.style.opacity = '.6';
+    const r = await api.put('/api/admin/settings/messages', { registered, winner, autoRegistered: $('msgAuto').checked });
+    btn.disabled = false; btn.style.opacity = '1';
+    if (r.ok) toast(t('تم حفظ الرسائل','Messages saved')); else toast(t('خطأ','Error'), true);
+  });
+
+  const resetTo = async (kind) => {
+    if (!confirm(t('استعادة النص الافتراضي؟','Restore the default text?'))) return;
+    const r = await api.put('/api/admin/settings/messages', { reset: kind });
+    if (r.ok) { toast(t('تمت الاستعادة','Restored')); renderSettings(); } else toast(t('خطأ','Error'), true);
+  };
+  $('msgResetReg').addEventListener('click', () => resetTo('registered'));
+  $('msgResetWin').addEventListener('click', () => resetTo('winner'));
 }
 
 // ── Admin users ──────────────────────────────────────────
