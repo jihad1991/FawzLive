@@ -567,6 +567,10 @@ async function renderSettings() {
         <a href="https://wasenderapi.com" target="_blank" rel="noopener" style="font-weight:600;">wasenderapi.com ${ICON.external}</a>
       </div>
 
+      <label class="small" style="display:block;font-weight:600;margin-bottom:6px;">${t('رقم الواتساب المرسِل','Sender WhatsApp number')}</label>
+      <input id="waPhone" class="field" value="${esc(st.whatsapp?.phone || '')}" placeholder="+968 9•• •• ••" inputmode="tel"
+             style="direction:ltr;text-align:start;margin-bottom:14px;">
+
       <label class="small" style="display:block;font-weight:600;margin-bottom:6px;">${t('مفتاح API','API key')}</label>
       <div style="display:flex;gap:8px;margin-bottom:14px;">
         <input id="waKey" class="field" type="password" autocomplete="off" spellcheck="false"
@@ -577,6 +581,24 @@ async function renderSettings() {
 
       <label class="small" style="display:block;font-weight:600;margin-bottom:6px;">${t('رابط الـ API','API base URL')}</label>
       <input id="waUrl" class="field" value="${esc(st.whatsapp?.baseUrl || 'https://wasenderapi.com/api')}" style="direction:ltr;text-align:start;margin-bottom:18px;">
+
+      <!-- ── Webhook ── -->
+      <div style="background:var(--surface-muted);border:1px solid var(--border-subtle);border-radius:14px;padding:16px;margin-bottom:18px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+          <div class="eyebrow">Webhook</div>
+          ${st.whatsapp?.webhook?.sessionStatus ? `<span class="pill">${t('حالة الجلسة','Session')}: ${esc(st.whatsapp.webhook.sessionStatus)}</span>` : ''}
+        </div>
+        <div class="caption" style="margin-bottom:10px;">${t('انسخ هذا الرابط والصقه في لوحة Wasender ← Webhooks لاستقبال حالة الجلسة والرسائل.','Copy this URL into the Wasender dashboard → Webhooks to receive session and message events.')}</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <input id="whUrl" class="field" readonly value="${esc(st.whatsapp?.webhook?.url || '')}" style="flex:1;direction:ltr;text-align:start;font-size:.85rem;background:var(--surface-card);">
+          <button id="whCopy" class="btn-ghost" type="button" style="padding:0 16px;white-space:nowrap;">${t('نسخ','Copy')}</button>
+        </div>
+        <label class="small" style="display:block;font-weight:600;margin-bottom:6px;">${t('سر الـ Webhook (من لوحة Wasender)','Webhook secret (from the Wasender dashboard)')}</label>
+        <input id="whSecret" class="field" type="password" autocomplete="off" spellcheck="false"
+               placeholder="${st.whatsapp?.webhook?.secretSet ? esc(st.whatsapp.webhook.secretMasked) + '  ' + t('(محفوظ)','(saved)') : t('الصق السر هنا للتحقق من الطلبات الواردة','Paste the secret to verify incoming requests')}"
+               style="direction:ltr;text-align:start;">
+        ${st.whatsapp?.webhook?.lastEvent ? `<div class="caption" style="margin-top:10px;direction:ltr;text-align:start;">✓ ${t('آخر حدث','Last event')}: <b>${esc(st.whatsapp.webhook.lastEvent.event)}</b> · ${esc((st.whatsapp.webhook.lastEvent.at || '').replace('T',' ').slice(0,16))}</div>` : `<div class="caption" style="margin-top:10px;">${t('لم يصل أي حدث بعد — بعد لصق الرابط في Wasender اضغط Test هناك.','No events yet — after pasting the URL in Wasender, hit Test there.')}</div>`}
+      </div>
 
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
         <button id="waSave" class="btn-primary" style="padding:12px 24px;">${t('حفظ الربط','Save connection')}</button>
@@ -643,18 +665,28 @@ async function renderSettings() {
     $('waEye').innerHTML = show ? ICON.eyeOff : ICON.eye;
   });
 
+  $('whCopy').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText($('whUrl').value);
+      toast(t('تم نسخ الرابط ✓','URL copied ✓'));
+    } catch { $('whUrl').select(); document.execCommand('copy'); toast(t('تم النسخ ✓','Copied ✓')); }
+  });
+
   $('waSave').addEventListener('click', async () => {
     const key = $('waKey').value.trim();
     const url = $('waUrl').value.trim();
     if (!key && !st.whatsapp?.configured) return toast(t('أدخل مفتاح API أولاً','Enter an API key first'), true);
-    const body = { baseUrl: url };
+    const body = { baseUrl: url, phone: $('waPhone').value.trim() };
     if (key) body.apiKey = key;                    // empty = keep the stored key
+    const whs = $('whSecret').value.trim();
+    if (whs) body.webhookSecret = whs;             // empty = keep the stored secret
     const btn = $('waSave'); btn.disabled = true; btn.style.opacity = '.6';
     const r = await api.put('/api/admin/settings/whatsapp', body);
     btn.disabled = false; btn.style.opacity = '1';
     if (r.ok) { toast(t('تم حفظ الربط','Connection saved')); renderSettings(); }
     else toast(r.data?.error === 'api-key-too-short' ? t('المفتاح قصير جداً','Key too short')
              : r.data?.error === 'base-url-invalid' ? t('رابط غير صالح','Invalid URL')
+             : r.data?.error === 'phone-invalid' ? t('رقم الواتساب غير صحيح','Invalid WhatsApp number')
              : t('خطأ','Error'), true);
   });
 

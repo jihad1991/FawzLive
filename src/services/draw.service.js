@@ -32,10 +32,15 @@ export function eligiblePool(campaignId) {
     db.prepare('SELECT participant_id FROM winners WHERE campaign_id = ? AND participant_id IS NOT NULL')
       .all(campaignId).map(r => r.participant_id)
   );
+  // Photographers can hold up to 3 entries with one phone — once any of them
+  // wins, the person's other entries leave the pool too.
+  const wonPhones = new Set(
+    db.prepare('SELECT phone FROM winners WHERE campaign_id = ?').all(campaignId).map(r => r.phone)
+  );
   const rows = db.prepare(
     `SELECT * FROM participants WHERE campaign_id = ? AND excluded = 0 ${c.exclude_prev ? 'AND won_before = 0' : ''}`
   ).all(campaignId);
-  return rows.filter(p => !wonThisCampaign.has(p.id));
+  return rows.filter(p => !wonThisCampaign.has(p.id) && !wonPhones.has(p.phone));
 }
 
 function secureRandomInt(max) {

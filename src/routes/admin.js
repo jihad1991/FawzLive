@@ -30,6 +30,25 @@ export default async function adminRoutes(app) {
     return admin ? { admin } : { admin: null };
   });
 
+  // ── Wasender webhook receiver ──────────────────────────
+  // Paste this URL in the Wasender dashboard (Webhooks). Requests are
+  // verified against the webhook secret saved in Settings; the latest
+  // event + session status are stored so the Settings page can show them.
+  app.post('/api/wasender/webhook', async (request, reply) => {
+    const secret = getSetting('wasender_webhook_secret', '');
+    const sig = request.headers['x-webhook-signature'] || '';
+    if (secret && sig !== secret) return reply.code(401).send({ error: 'bad-signature' });
+
+    const b = request.body || {};
+    const event = String(b.event || b.type || 'unknown').slice(0, 60);
+    setSetting('wasender_last_event', JSON.stringify({ event, at: new Date().toISOString() }));
+    if (event === 'session.status' || event === 'sessions.status') {
+      const status = String(b.data?.status || b.status || '').slice(0, 30);
+      if (status) setSetting('wasender_session_status', status);
+    }
+    return { ok: true };
+  });
+
   // ── Everything below requires an admin session ────────
   app.register(async (guarded) => {
     guarded.addHook('preHandler', requireAdmin);
@@ -88,15 +107,14 @@ export default async function adminRoutes(app) {
       const name = String(request.body?.name || '').trim().slice(0, 80);
       const phone = String(request.body?.phone || '').trim().slice(0, 25);
       if (!name || !phone) return reply.code(400).send({ error: 'name-and-phone-required' });
-      try {
-        const info = db.prepare(
-          `INSERT INTO participants (campaign_id, name, phone, source, agreed) VALUES (?, ?, ?, 'admin', 1)`
-        ).run(c.id, name, phone);
-        return { ok: true, id: info.lastInsertRowid };
-      } catch (err) {
-        if (String(err.message).includes('UNIQUE')) return reply.code(409).send({ error: 'duplicate-phone' });
-        throw err;
-      }
+      // Same per-phone limits as public registration: visitors 1, photographers 3.
+      const maxEntries = c.type === 'photographer' ? 3 : 1;
+      const existing = db.prepare('SELECT COUNT(*) n FROM participants WHERE campaign_id = ? AND phone = ?').get(c.id, phone).n;
+      if (existing >= maxEntries) return reply.code(409).send({ error: 'duplicate-phone', max: maxEntries });
+      const info = db.prepare(
+        `INSERT INTO participants (campaign_id, name, phone, source, agreed) VALUES (?, ?, ?, 'admin', 1)`
+      ).run(c.id, name, phone);
+      return { ok: true, id: info.lastInsertRowid };
     });
 
     // Single participant profile (details + reels + win history)
@@ -350,9 +368,12 @@ export default async function adminRoutes(app) {
 
     // Settings (store branding + wasender status)
     // The key itself is never returned — only a masked hint.
-    guarded.get('/api/admin/settings', async () => {
+    guarded.get('/api/admin/settings', async (request) => {
       const c = getActiveCampaign();
       const w = waCreds();
+      const proto = request.headers['x-forwarded-proto'] || request.protocol || 'http';
+      let lastEvent = null;
+      try { lastEvent = JSON.parse(getSetting('wasender_last_event', '') || 'null'); } catch {}
       return {
         store: { name: c?.store_name, handle: c?.store_handle, initial: c?.store_initial },
         whatsapp: {
@@ -360,6 +381,14 @@ export default async function adminRoutes(app) {
           source: w.source,                                   // 'db' | 'env' | null
           masked: w.apiKey ? maskKey(w.apiKey) : '',
           baseUrl: w.baseUrl,
+          phone: getSetting('wasender_phone', ''),
+          webhook: {
+            url: `${proto}://${request.headers.host}/api/wasender/webhook`,
+            secretSet: !!getSetting('wasender_webhook_secret', ''),
+            secretMasked: getSetting('wasender_webhook_secret', '') ? maskKey(getSetting('wasender_webhook_secret', '')) : '',
+            sessionStatus: getSetting('wasender_session_status', ''),
+            lastEvent,
+          },
         },
         messages: {
           registered: getTemplate('registered'),
@@ -430,6 +459,15 @@ export default async function adminRoutes(app) {
         // An empty string clears the stored key (falls back to .env / mock mode).
         if (apiKey && apiKey.length < 8) return reply.code(400).send({ error: 'api-key-too-short' });
         setSetting('wasender_api_key', apiKey);
+      }
+      if (typeof b.phone === 'string') {
+        const phone = b.phone.trim().slice(0, 25);
+        if (phone && phone.replace(/\D/g, '').length < 8) return reply.code(400).send({ error: 'phone-invalid' });
+        setSetting('wasender_phone', phone);
+      }
+      if (typeof b.webhookSecret === 'string') {
+        // The secret shown in the Wasender dashboard; incoming webhooks must match it.
+        setSetting('wasender_webhook_secret', b.webhookSecret.trim());
       }
 
       const w = waCreds();

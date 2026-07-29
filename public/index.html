@@ -359,7 +359,7 @@ function applySegment() {
     ? '<span class="tar">اشترك في سحب المصوّرين</span><span class="ten">Join the photographers\' draw</span>'
     : '<span class="tar">اشترك في سحب الزوّار</span><span class="ten">Join the visitors\' draw</span>';
   $('formHint').innerHTML = segment === 'photographer'
-    ? '<span class="tar">أرفق حتى 3 روابط ريلز إنستقرام للمشاركة</span><span class="ten">Attach up to 3 Instagram Reel links to enter</span>'
+    ? '<span class="tar">أرفق حتى 3 ريلز · يمكنك الاشتراك حتى 3 مرات بنفس الرقم بريلز مختلفة</span><span class="ten">Up to 3 reels per entry · enter up to 3 times with the same number using different reels</span>'
     : '<span class="tar">مجاناً · لكل رقم اشتراك واحد</span><span class="ten">Free · one entry per number</span>';
   moveInd();
   loadHero();
@@ -408,9 +408,15 @@ $('submitBtn').addEventListener('click', async () => {
     $('formView').style.display = 'none';
     $('doneView').style.display = 'block';
     if (r.data.total) { $('doneRank').style.display = 'inline-flex'; $('doneRankNum').textContent = r.data.total.toLocaleString('en-US'); }
+    if (segment === 'photographer' && r.data.entry) {
+      $('doneRank').style.display = 'inline-flex';
+      $('doneRankNum').textContent = r.data.total.toLocaleString('en-US')
+        + (isEn() ? ` · entry ${r.data.entry}/${r.data.maxEntries}` : ` · اشتراكك ${r.data.entry} من ${r.data.maxEntries}`);
+    }
     fireDoneConfetti();
   }
   else if (err === 'already-registered') toast(isEn() ? 'This number is already entered' : 'هذا الرقم مسجّل مسبقاً', true);
+  else if (err === 'max-entries') toast(isEn() ? 'This number reached the maximum of 3 entries' : 'وصل هذا الرقم الحد الأقصى (3 اشتراكات)', true);
   else if (err === 'reel-used') toast(isEn() ? 'One of these reels is already entered' : 'أحد الريلز مُستخدَم في السحب مسبقاً', true);
   else if (err === 'reel-not-instagram') toast(isEn() ? 'Links must be valid Instagram Reels' : 'الرابط ليس ريل إنستقرام صحيح', true);
   else if (err === 'reel-duplicate') toast(isEn() ? 'The reel links must be different' : 'روابط الريلز يجب أن تكون مختلفة', true);

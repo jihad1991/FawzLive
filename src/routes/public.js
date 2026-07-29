@@ -98,11 +98,27 @@ export default async function publicRoutes(app) {
       }
     }
 
+    // Entry limits per phone: visitors once, photographers up to 3 times
+    // (each entry with fresh reels — reel reuse is already rejected above).
+    const maxEntries = segment === 'photographer' ? 3 : 1;
+
     try {
-      const info = db.prepare(
-        `INSERT INTO participants (campaign_id, name, phone, source, agreed, reel1, reel2, reel3)
-         VALUES (?, ?, ?, ?, 1, ?, ?, ?)`
-      ).run(c.id, name, phone, source, reels[0] || null, reels[1] || null, reels[2] || null);
+      const result = db.transaction(() => {
+        const existing = db.prepare('SELECT COUNT(*) n FROM participants WHERE campaign_id = ? AND phone = ?').get(c.id, phone).n;
+        if (existing >= maxEntries) return { limited: true, existing };
+        const info = db.prepare(
+          `INSERT INTO participants (campaign_id, name, phone, source, agreed, reel1, reel2, reel3)
+           VALUES (?, ?, ?, ?, 1, ?, ?, ?)`
+        ).run(c.id, name, phone, source, reels[0] || null, reels[1] || null, reels[2] || null);
+        return { id: info.lastInsertRowid, entry: existing + 1 };
+      })();
+
+      if (result.limited) {
+        return reply.code(409).send(segment === 'photographer'
+          ? { error: 'max-entries', max: maxEntries }
+          : { error: 'already-registered' });
+      }
+      const info = { lastInsertRowid: result.id };
 
       const count = db.prepare('SELECT COUNT(*) n FROM participants WHERE campaign_id = ?').get(c.id).n;
       broadcast({ type: 'participant:new', segment, campaignId: c.id, count, name });
@@ -113,9 +129,8 @@ export default async function publicRoutes(app) {
           .catch(() => {});
       }
 
-      return { ok: true, id: info.lastInsertRowid, total: count, segment };
+      return { ok: true, id: info.lastInsertRowid, total: count, segment, entry: result.entry, maxEntries };
     } catch (err) {
-      if (String(err.message).includes('UNIQUE')) return reply.code(409).send({ error: 'already-registered' });
       request.log.error(err);
       return reply.code(500).send({ error: 'server-error' });
     }

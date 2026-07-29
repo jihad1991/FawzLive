@@ -52,10 +52,10 @@ export function migrate() {
       won_before INTEGER NOT NULL DEFAULT 0,
       agreed INTEGER NOT NULL DEFAULT 1,
       notified INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE (campaign_id, phone)
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_participants_campaign ON participants(campaign_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_participants_phone ON participants(campaign_id, phone);
 
     CREATE TABLE IF NOT EXISTS winners (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -85,6 +85,41 @@ export function migrate() {
   const partCols = db.prepare('PRAGMA table_info(participants)').all().map(c => c.name);
   for (const col of ['reel1', 'reel2', 'reel3']) {
     if (!partCols.includes(col)) db.exec(`ALTER TABLE participants ADD COLUMN ${col} TEXT`);
+  }
+
+  // Photographers may enter up to 3 times with the same number, so the old
+  // table-level UNIQUE(campaign_id, phone) has to go. SQLite can't drop a
+  // constraint, so existing databases get a one-time table rebuild; the
+  // per-segment entry limits are enforced in the register endpoints instead.
+  const hasUnique = db.prepare('PRAGMA index_list(participants)').all().some(i => i.origin === 'u');
+  if (hasUnique) {
+    db.pragma('foreign_keys = OFF');
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE participants_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          phone TEXT NOT NULL,
+          source TEXT NOT NULL DEFAULT 'public',
+          reel1 TEXT,
+          reel2 TEXT,
+          reel3 TEXT,
+          excluded INTEGER NOT NULL DEFAULT 0,
+          won_before INTEGER NOT NULL DEFAULT 0,
+          agreed INTEGER NOT NULL DEFAULT 1,
+          notified INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO participants_new (id, campaign_id, name, phone, source, reel1, reel2, reel3, excluded, won_before, agreed, notified, created_at)
+          SELECT id, campaign_id, name, phone, source, reel1, reel2, reel3, excluded, won_before, agreed, notified, created_at FROM participants;
+        DROP TABLE participants;
+        ALTER TABLE participants_new RENAME TO participants;
+        CREATE INDEX IF NOT EXISTS idx_participants_campaign ON participants(campaign_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_participants_phone ON participants(campaign_id, phone);
+      `);
+    })();
+    db.pragma('foreign_keys = ON');
   }
 }
 
