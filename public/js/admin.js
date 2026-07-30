@@ -86,6 +86,7 @@ $('drawSelect').addEventListener('change', (e) => {
   selectedCampaignId = parseInt(e.target.value, 10);
   localStorage.setItem('ld_draw', String(selectedCampaignId));
   setupSelectedId = selectedCampaignId;
+  searchQ = ''; page = 1;          // another draw = a fresh list
   render();
 });
 
@@ -225,14 +226,40 @@ function syncNav() {
 
 // ── Participants ─────────────────────────────────────────
 let searchQ = '';
+let page = 1;
+const PAGE_SIZES = [10, 25, 50, 100];
+// Clamp to an offered size so the selector never shows a value we aren't using.
+let pageSize = PAGE_SIZES.includes(+localStorage.getItem('ld_page_size'))
+  ? +localStorage.getItem('ld_page_size') : 25;
+
+// Page numbers with ellipsis: 1 … 4 5 6 … 20
+function pageList(cur, total) {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const out = [1];
+  const from = Math.max(2, cur - 1), to = Math.min(total - 1, cur + 1);
+  if (from > 2) out.push('…');
+  for (let i = from; i <= to; i++) out.push(i);
+  if (to < total - 1) out.push('…');
+  out.push(total);
+  return out;
+}
 function reelChips(p) {
   const reels = [p.reel1, p.reel2, p.reel3].filter(Boolean);
   if (!reels.length) return `<span class="caption">—</span>`;
   return reels.map((r, i) => `<a href="${esc(r)}" target="_blank" rel="noopener" class="pill" style="text-decoration:none;margin-inline-end:4px;">${ICON.film}<span style="margin-inline-start:4px;">${i + 1}</span></a>`).join('');
 }
 async function renderParticipants() {
-  const data = await api.get('/api/admin/participants' + qs() + (qs() ? '&' : '?') + 'q=' + encodeURIComponent(searchQ));
+  const params = new URLSearchParams({ q: searchQ, limit: pageSize, offset: (page - 1) * pageSize });
+  if (selectedCampaignId) params.set('campaignId', selectedCampaignId);
+  const data = await api.get('/api/admin/participants?' + params);
+
+  // Deleting the last row of the last page can leave us past the end.
+  const pages = Math.max(1, Math.ceil(data.total / pageSize));
+  if (page > pages) { page = pages; return renderParticipants(); }
+
   $('navCount').textContent = data.total;
+  const from = data.total ? (page - 1) * pageSize + 1 : 0;
+  const to = (page - 1) * pageSize + data.items.length;
   const isPhotog = data.segment === 'photographer';
   $('pageTitle').innerHTML = (isEn() ? 'Participants' : 'المشاركون') + `<span class="pill" style="margin-inline-start:8px;">${segLabel(data.segment)}</span>`;
   $('content').innerHTML = `
@@ -266,12 +293,63 @@ async function renderParticipants() {
         </tbody>
       </table>
     </div>
-    <div class="caption" style="padding:14px 18px;">${t(`عرض ${data.items.length} من ${data.total} مشارك`, `Showing ${data.items.length} of ${data.total}`)}</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px 18px;border-top:1px solid var(--border-subtle);">
+      <div class="caption">
+        ${t(`عرض ${from}–${to} من ${data.total} مشارك`, `Showing ${from}–${to} of ${data.total}`)}
+        ${pages > 1 ? ` · ${t(`صفحة ${page} من ${pages}`, `page ${page} of ${pages}`)}` : ''}
+      </div>
+
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <label class="caption" style="display:flex;align-items:center;gap:7px;">
+          ${t('لكل صفحة','Per page')}
+          <select id="pgSize" class="field" style="width:auto;padding:6px 10px;font-size:.8rem;border-radius:10px;">
+            ${PAGE_SIZES.map(n => `<option value="${n}" ${n === pageSize ? 'selected' : ''}>${n}</option>`).join('')}
+          </select>
+        </label>
+
+        ${pages > 1 ? `
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button class="pgBtn" data-pg="${page - 1}" ${page === 1 ? 'disabled' : ''}
+            style="min-width:34px;height:34px;padding:0 10px;border-radius:10px;border:1px solid var(--border-soft);font-weight:700;font-size:.82rem;
+                   color:var(--text-secondary);${page === 1 ? 'opacity:.4;cursor:default;' : ''}">${isEn() ? '‹' : '›'}</button>
+          ${pageList(page, pages).map(n => n === '…'
+            ? `<span class="caption" style="padding:0 2px;">…</span>`
+            : `<button class="pgBtn" data-pg="${n}"
+                 style="min-width:34px;height:34px;border-radius:10px;font-weight:700;font-size:.82rem;font-family:'Poppins',sans-serif;
+                        ${n === page
+                          ? 'background:var(--poslix-brand);color:#fff;border:1px solid var(--poslix-brand);'
+                          : 'border:1px solid var(--border-soft);color:var(--text-secondary);'}">${n}</button>`).join('')}
+          <button class="pgBtn" data-pg="${page + 1}" ${page === pages ? 'disabled' : ''}
+            style="min-width:34px;height:34px;padding:0 10px;border-radius:10px;border:1px solid var(--border-soft);font-weight:700;font-size:.82rem;
+                   color:var(--text-secondary);${page === pages ? 'opacity:.4;cursor:default;' : ''}">${isEn() ? '›' : '‹'}</button>
+        </div>` : ''}
+      </div>
+    </div>
   </div>`;
 
   const si = $('searchInput');
-  si.addEventListener('input', () => { searchQ = si.value; clearTimeout(si._t); si._t = setTimeout(() => renderParticipants().then(() => $('searchInput').focus()), 250); });
+  si.addEventListener('input', () => {
+    searchQ = si.value; page = 1;              // a new query starts from the top
+    clearTimeout(si._t);
+    si._t = setTimeout(() => renderParticipants().then(() => {
+      const f = $('searchInput'); f.focus(); f.setSelectionRange(f.value.length, f.value.length);
+    }), 250);
+  });
   $('addBtn').addEventListener('click', addParticipantPrompt);
+
+  document.querySelectorAll('.pgBtn[data-pg]').forEach(b => b.addEventListener('click', () => {
+    const n = parseInt(b.dataset.pg, 10);
+    if (b.disabled || n === page || n < 1) return;
+    page = n;
+    renderParticipants().then(() => $('content').scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }));
+
+  $('pgSize').addEventListener('change', (e) => {
+    pageSize = parseInt(e.target.value, 10);
+    localStorage.setItem('ld_page_size', String(pageSize));
+    page = 1;
+    renderParticipants();
+  });
   document.querySelectorAll('tr[data-id]').forEach(tr => {
     const id = tr.dataset.id;
     tr.querySelector('.tExc').addEventListener('click', async () => {
