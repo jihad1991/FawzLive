@@ -542,6 +542,7 @@ async function renderSettings() {
   const c = await api.get('/api/admin/campaign');
   const st = await syncWaStatus();
   const waOn = st.whatsapp?.configured;
+  const isLocal = st.whatsapp?.provider === 'local';
   $('content').innerHTML = `
   <div style="display:flex;flex-direction:column;gap:18px;max-width:640px;">
     <div class="card" style="padding:24px;">
@@ -562,6 +563,30 @@ async function renderSettings() {
         </span>
       </div>
 
+      <!-- provider switch -->
+      <div style="display:flex;gap:0;background:var(--surface-muted);border:1px solid var(--border-subtle);border-radius:14px;padding:5px;margin-bottom:18px;">
+        ${[['local', t('بوابة داخلية (QR)','Built-in (QR)')], ['wasender', 'Wasender API']].map(([v, lbl]) => `
+          <button class="provBtn" data-prov="${v}" style="flex:1;padding:11px;border-radius:10px;font-weight:700;font-size:.85rem;transition:.2s;
+            ${isLocal === (v === 'local') ? 'background:var(--poslix-brand);color:#fff;' : 'background:transparent;color:var(--text-secondary);'}">${lbl}</button>`).join('')}
+      </div>
+
+      ${isLocal ? `
+        <!-- ── Built-in gateway ── -->
+        <div class="caption" style="margin-bottom:16px;">
+          ${t('اربط رقم واتساب بمسح رمز QR — تماماً كما في واتساب ويب. الجلسة محفوظة على خادمك ولا تمر بأي طرف ثالث.','Link a WhatsApp number by scanning a QR code, just like WhatsApp Web. The session lives on your own server — no third party involved.')}
+        </div>
+        <div id="gwPanel" style="text-align:center;padding:8px 0 4px;">
+          <div class="caption">${t('جارٍ التحميل…','Loading…')}</div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">
+          <button id="gwConnect" class="btn-primary" style="padding:12px 24px;">${t('ربط رقم واتساب','Link a number')}</button>
+          <button id="waTest" class="btn-ghost" style="padding:12px 20px;">${t('إرسال رسالة تجريبية','Send test message')}</button>
+          <button id="gwLogout" class="btn-ghost" style="padding:12px 18px;color:var(--status-negative);border-color:rgba(192,73,47,.4);">${t('فصل الرقم','Unlink')}</button>
+        </div>
+        <div class="caption" style="margin-top:14px;line-height:1.7;">
+          ${t('يُفضَّل استخدام شريحة مخصصة للسحوبات، والرسائل تُرسَل بتباعد تلقائي (٤–٧ ثوانٍ) لحماية الرقم.','Use a dedicated SIM for draws. Messages are spaced automatically (4–7s) to protect the number.')}
+        </div>
+      ` : `
       <div class="caption" style="margin-bottom:16px;">
         ${t('أدخل مفتاح Wasender API لتفعيل الإرسال الفعلي. يُحفظ في قاعدة البيانات ولا يُعرض بعد الحفظ.','Enter your Wasender API key to enable real sending. Stored in the database and never shown again after saving.')}
         <a href="https://wasenderapi.com" target="_blank" rel="noopener" style="font-weight:600;">wasenderapi.com ${ICON.external}</a>
@@ -606,6 +631,7 @@ async function renderSettings() {
         ${st.whatsapp?.source === 'db' ? `<button id="waClear" class="btn-ghost" style="padding:12px 18px;color:var(--status-negative);border-color:rgba(192,73,47,.4);">${t('حذف المفتاح','Remove key')}</button>` : ''}
       </div>
       ${st.whatsapp?.source === 'env' ? `<div class="caption" style="margin-top:12px;">${t('المفتاح الحالي مقروء من ملف .env — أي مفتاح تحفظه هنا سيَجُبّه.','The current key comes from .env — a key saved here overrides it.')}</div>` : ''}
+      `}
     </div>
 
     <!-- ── Message templates ── -->
@@ -657,22 +683,84 @@ async function renderSettings() {
     if (r.ok) toast(t('تم الحفظ','Saved')); else toast(t('خطأ','Error'), true);
   });
 
-  // ── WhatsApp connection ──
-  $('waEye').addEventListener('click', () => {
+  // ── Provider switch ──
+  document.querySelectorAll('.provBtn').forEach(b => b.addEventListener('click', async () => {
+    if ((b.dataset.prov === 'local') === isLocal) return;      // already active
+    const r = await api.put('/api/admin/settings/whatsapp', { provider: b.dataset.prov });
+    if (r.ok) renderSettings(); else toast(t('خطأ','Error'), true);
+  }));
+
+  // ── Built-in gateway (QR) ──
+  if (isLocal) {
+    const panel = $('gwPanel');
+    const LABEL = {
+      connected:    [t('الرقم مرتبط وجاهز للإرسال','Linked and ready'), 'var(--status-positive-strong)'],
+      qr:           [t('امسح الرمز من واتساب ← الأجهزة المرتبطة','Scan from WhatsApp → Linked devices'), 'var(--poslix-accent-strong)'],
+      connecting:   [t('جارٍ الاتصال…','Connecting…'), 'var(--text-muted)'],
+      disconnected: [t('غير مرتبط','Not linked'), 'var(--text-muted)'],
+    };
+
+    const paint = (g) => {
+      const [label, color] = LABEL[g.status] || LABEL.disconnected;
+      panel.innerHTML = `
+        ${g.qr ? `<img src="${g.qr}" alt="QR" width="260" height="260"
+                    style="display:block;margin:0 auto 14px;border-radius:16px;border:1px solid var(--border-soft);background:#fff;padding:10px;">` : ''}
+        ${g.status === 'connected' ? `<div style="font-size:2rem;line-height:1;margin-bottom:8px;">✅</div>` : ''}
+        <div style="font-weight:700;color:${color};">${label}</div>
+        ${g.me ? `<div class="caption" style="margin-top:6px;direction:ltr;">+${esc(g.me)}</div>` : ''}
+        ${g.queued ? `<div class="caption" style="margin-top:6px;">${t('في قائمة الإرسال','Queued')}: ${g.queued}</div>` : ''}
+        ${g.lastError === 'logged-out' ? `<div class="caption" style="margin-top:8px;color:var(--status-warning);">${t('تم فصل الجهاز من الجوال — أعد الربط','Unlinked from the phone — link again')}</div>` : ''}`;
+      // Reflect the live state in the header badge without a full re-render.
+      const badge = $('waBadge');
+      if (badge) {
+        const on = g.status === 'connected';
+        badge.style.background = on ? 'var(--status-positive-soft)' : 'rgba(201,138,30,.16)';
+        badge.style.color = on ? 'var(--status-positive-strong)' : 'var(--status-warning)';
+        badge.lastChild.textContent = ' ' + (on ? t('متصل','Connected') : t('غير مرتبط','Not linked'));
+      }
+    };
+
+    // Poll only while this view is open and a link is in progress.
+    const poll = async () => {
+      if (currentView !== 'settings' || !document.getElementById('gwPanel')) return;
+      const g = await api.get('/api/admin/settings/whatsapp/gateway');
+      paint(g);
+      const again = g.status === 'qr' || g.status === 'connecting' || g.queued > 0;
+      setTimeout(poll, again ? 2000 : 6000);
+    };
+    poll();
+
+    $('gwConnect').addEventListener('click', async () => {
+      const btn = $('gwConnect'); btn.disabled = true; btn.style.opacity = '.6';
+      panel.innerHTML = `<div class="caption">${t('جارٍ توليد رمز QR…','Generating QR…')}</div>`;
+      const r = await api.post('/api/admin/settings/whatsapp/gateway/connect');
+      btn.disabled = false; btn.style.opacity = '1';
+      if (r.ok) paint(r.data); else toast(t('تعذّر بدء الاتصال','Could not start'), true);
+    });
+
+    $('gwLogout').addEventListener('click', async () => {
+      if (!confirm(t('فصل الرقم ومسح الجلسة؟','Unlink the number and wipe the session?'))) return;
+      const r = await api.post('/api/admin/settings/whatsapp/gateway/logout');
+      if (r.ok) { toast(t('تم فصل الرقم','Unlinked')); renderSettings(); } else toast(t('خطأ','Error'), true);
+    });
+  }
+
+  // ── Wasender connection ──
+  if ($('waEye')) $('waEye').addEventListener('click', () => {
     const f = $('waKey');
     const show = f.type === 'password';
     f.type = show ? 'text' : 'password';
     $('waEye').innerHTML = show ? ICON.eyeOff : ICON.eye;
   });
 
-  $('whCopy').addEventListener('click', async () => {
+  if ($('whCopy')) $('whCopy').addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText($('whUrl').value);
       toast(t('تم نسخ الرابط ✓','URL copied ✓'));
     } catch { $('whUrl').select(); document.execCommand('copy'); toast(t('تم النسخ ✓','Copied ✓')); }
   });
 
-  $('waSave').addEventListener('click', async () => {
+  if ($('waSave')) $('waSave').addEventListener('click', async () => {
     const key = $('waKey').value.trim();
     const url = $('waUrl').value.trim();
     if (!key && !st.whatsapp?.configured) return toast(t('أدخل مفتاح API أولاً','Enter an API key first'), true);
@@ -690,7 +778,7 @@ async function renderSettings() {
              : t('خطأ','Error'), true);
   });
 
-  $('waTest').addEventListener('click', async () => {
+  if ($('waTest')) $('waTest').addEventListener('click', async () => {
     const phone = prompt(t('رقم الواتساب لإرسال رسالة تجريبية:','WhatsApp number to send a test message:'), '+968');
     if (!phone) return;
     const btn = $('waTest'); btn.disabled = true; btn.style.opacity = '.6';

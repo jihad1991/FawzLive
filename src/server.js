@@ -6,6 +6,7 @@ import path from 'node:path';
 import { config } from './config.js';
 import { migrate } from './db.js';
 import { ensureSeed } from './seed.js';
+import { waGatewayBoot } from './services/wa-gateway.js';
 
 import publicRoutes from './routes/public.js';
 import adminRoutes from './routes/admin.js';
@@ -57,6 +58,7 @@ try {
   console.log(`  -  http://localhost:${config.port}       (public subscribe)`);
   console.log(`  -  http://localhost:${config.port}/admin  (dashboard)`);
   console.log(`  -  http://localhost:${config.port}/live   (live draw screen)\n`);
+  waGatewayBoot();   // resume a linked WhatsApp session, if any
 } catch (err) {
   app.log.error(err);
   process.exit(1);

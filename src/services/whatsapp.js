@@ -4,13 +4,24 @@
 // With no key at all it runs in mock mode: messages are logged, never sent.
 import { config } from '../config.js';
 import { db, getSetting } from '../db.js';
+import { waGatewayReady, waGatewaySend } from './wa-gateway.js';
+
+// Which sender is in charge: the built-in QR gateway or the Wasender API.
+export function waProvider() {
+  return getSetting('wa_provider', 'wasender') === 'local' ? 'local' : 'wasender';
+}
 
 // Live credentials — DB first (editable from the UI), then .env.
 export function waCreds() {
   const apiKey = (getSetting('wasender_api_key', '') || config.wasender.apiKey || '').trim();
   const baseUrl = (getSetting('wasender_base_url', '') || config.wasender.baseUrl || '').trim().replace(/\/+$/, '');
   const source = getSetting('wasender_api_key', '') ? 'db' : (config.wasender.apiKey ? 'env' : null);
-  return { apiKey, baseUrl, source, configured: !!apiKey };
+  const provider = waProvider();
+  return {
+    apiKey, baseUrl, source, provider,
+    // "Configured" means the active provider can actually deliver a message.
+    configured: provider === 'local' ? waGatewayReady() : !!apiKey,
+  };
 }
 
 function normalizePhone(phone) {
@@ -26,6 +37,16 @@ export async function sendWhatsApp(phone, text) {
   const to = normalizePhone(phone);
   if (!to || to.includes('•')) {
     return { ok: false, mock: true, reason: 'masked-or-empty-number' };
+  }
+
+  // Built-in gateway: queued + throttled through the linked phone.
+  if (waProvider() === 'local') {
+    if (!waGatewayReady()) {
+      console.log(`[whatsapp:mock] (gateway offline) to ${to}\n${text}\n`);
+      return { ok: true, mock: true, reason: 'gateway-offline' };
+    }
+    const r = await waGatewaySend(to, text);
+    return r.ok ? { ok: true, via: 'local' } : { ok: false, error: r.error };
   }
 
   const { apiKey, baseUrl } = waCreds();

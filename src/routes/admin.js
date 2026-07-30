@@ -7,6 +7,7 @@ import {
   getTemplate, fillTemplate, autoSendRegistered,
   TEMPLATE_VARS, DEFAULT_TEMPLATES,
 } from '../services/whatsapp.js';
+import { waGatewayStatus, waGatewayConnect, waGatewayLogout } from '../services/wa-gateway.js';
 
 export default async function adminRoutes(app) {
   // ── Auth ──────────────────────────────────────────────
@@ -385,6 +386,8 @@ export default async function adminRoutes(app) {
         store: { name: c?.store_name, handle: c?.store_handle, initial: c?.store_initial },
         whatsapp: {
           configured: w.configured,
+          provider: w.provider,                               // 'local' | 'wasender'
+          gateway: waGatewayStatus(),
           source: w.source,                                   // 'db' | 'env' | null
           masked: w.apiKey ? maskKey(w.apiKey) : '',
           baseUrl: w.baseUrl,
@@ -453,6 +456,7 @@ export default async function adminRoutes(app) {
     // Save (or clear) the Wasender credentials from the UI.
     guarded.put('/api/admin/settings/whatsapp', async (request, reply) => {
       const b = request.body || {};
+      if (b.provider === 'local' || b.provider === 'wasender') setSetting('wa_provider', b.provider);
       const apiKey = typeof b.apiKey === 'string' ? b.apiKey.trim() : undefined;
       const baseUrl = typeof b.baseUrl === 'string' ? b.baseUrl.trim().replace(/\/+$/, '') : undefined;
 
@@ -478,8 +482,18 @@ export default async function adminRoutes(app) {
       }
 
       const w = waCreds();
-      return { ok: true, configured: w.configured, source: w.source, masked: w.apiKey ? maskKey(w.apiKey) : '', baseUrl: w.baseUrl };
+      return { ok: true, configured: w.configured, provider: w.provider, source: w.source, masked: w.apiKey ? maskKey(w.apiKey) : '', baseUrl: w.baseUrl };
     });
+
+    // ── Built-in WhatsApp gateway (QR link) ─────────────
+    guarded.get('/api/admin/settings/whatsapp/gateway', async () => waGatewayStatus());
+
+    guarded.post('/api/admin/settings/whatsapp/gateway/connect', async () => {
+      await waGatewayConnect();
+      return waGatewayStatus();
+    });
+
+    guarded.post('/api/admin/settings/whatsapp/gateway/logout', async () => waGatewayLogout());
 
     // Send a test message to verify the connection end to end.
     guarded.post('/api/admin/settings/whatsapp/test', async (request, reply) => {
