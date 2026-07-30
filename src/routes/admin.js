@@ -114,6 +114,13 @@ export default async function adminRoutes(app) {
       const info = db.prepare(
         `INSERT INTO participants (campaign_id, name, phone, source, agreed) VALUES (?, ?, ?, 'admin', 1)`
       ).run(c.id, name, phone);
+
+      // Same confirmation the public registration sends (honors the auto-send toggle).
+      if (autoSendRegistered()) {
+        sendWhatsApp(phone, templates.registered(name, c.name))
+          .then(r => { if (r.ok && !r.mock) db.prepare('UPDATE participants SET notified = 1 WHERE id = ?').run(info.lastInsertRowid); })
+          .catch(() => {});
+      }
       return { ok: true, id: info.lastInsertRowid };
     });
 

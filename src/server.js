@@ -24,6 +24,14 @@ const app = Fastify({
 await app.register(fastifyCookie, { secret: config.sessionSecret });
 await app.register(fastifyWebsocket);
 
+// Code files always revalidate (etag 304s keep it fast) so admins never see
+// a stale UI after a deploy; images and fonts may cache normally.
+// (Registered before the routes/static plugin so it applies to them.)
+app.addHook('onSend', async (request, reply) => {
+  const type = String(reply.getHeader('content-type') || '');
+  if (/text\/html|javascript|text\/css/i.test(type)) reply.header('cache-control', 'no-cache');
+});
+
 // API + WS routes
 await app.register(publicRoutes);
 await app.register(adminRoutes);
