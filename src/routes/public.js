@@ -2,7 +2,7 @@
 // Two segments run in parallel: 'visitor' (name + phone) and 'photographer'
 // (name + phone + up to 3 Instagram reel links). Each has its own draw/prize.
 import { db } from '../db.js';
-import { getActiveCampaign } from '../services/draw.service.js';
+import { getActiveCampaign, getCampaign } from '../services/draw.service.js';
 import { broadcast } from '../services/hub.js';
 import { sendWhatsApp, templates, autoSendRegistered } from '../services/whatsapp.js';
 
@@ -47,8 +47,19 @@ function campaignPublicView(c) {
 export default async function publicRoutes(app) {
   // Public campaign info. ?segment=visitor|photographer selects the track;
   // without it, returns both tracks so the page can show the two-car event.
+  // Draws a kiosk / entry page may point at (name + prize only — public info).
+  app.get('/api/campaigns', async () => {
+    const items = db.prepare(
+      `SELECT id, name, prize, type, active FROM campaigns ORDER BY type ASC, active DESC, id DESC`).all();
+    return { items };
+  });
+
   app.get('/api/campaign', async (request) => {
     const seg = request.query.segment;
+    // ?campaignId= pins the page to one specific draw.
+    if (request.query.campaignId) {
+      return campaignPublicView(getCampaign(parseInt(request.query.campaignId, 10))) || { error: 'no-campaign' };
+    }
     if (seg === 'visitor' || seg === 'photographer') {
       return campaignPublicView(getActiveCampaign(seg)) || { error: 'no-campaign' };
     }
@@ -58,10 +69,18 @@ export default async function publicRoutes(app) {
     };
   });
 
-  // Register a participant into the active draw of the chosen segment.
+  // Register a participant. A kiosk/page may pin itself to one draw with
+  // campaignId; otherwise the active draw of the chosen segment is used.
   app.post('/api/register', async (request, reply) => {
     const b = request.body || {};
-    const segment = b.segment === 'photographer' ? 'photographer' : 'visitor';
+    const requested = b.segment === 'photographer' ? 'photographer' : 'visitor';
+    const c = b.campaignId
+      ? getCampaign(parseInt(b.campaignId, 10))
+      : getActiveCampaign(requested);
+    if (!c) return reply.code(400).send({ error: 'no-campaign' });
+    // The draw itself decides what a valid entry looks like, not the client.
+    const segment = c.type === 'photographer' ? 'photographer' : 'visitor';
+
     const name = String(b.name || '').trim().slice(0, 80);
     const phone = cleanPhone(b.phone).slice(0, 25);
     const agreed = !!b.agree;
@@ -85,9 +104,6 @@ export default async function publicRoutes(app) {
       }
       if (reels.length === 0) return reply.code(400).send({ error: 'reels-required' });
     }
-
-    const c = getActiveCampaign(segment);
-    if (!c) return reply.code(400).send({ error: 'no-campaign' });
 
     // Reject reels already submitted by anyone else in this draw.
     if (reels.length) {

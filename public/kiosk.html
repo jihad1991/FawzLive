@@ -105,6 +105,25 @@
     background:rgba(222,170,93,.14); border:1px solid rgba(222,170,93,.4); font-weight:800; font-size:1.05rem;
     animation: fadeUp .5s .5s ease both; }
   .done-rank .n { font-family:'Poppins',sans-serif; color:#fbe7bd; }
+
+  /* Draw switcher — discreet chip for staff, top corner */
+  .draw-chip { position:absolute; top:16px; inset-inline-end:18px; z-index:5; display:flex; align-items:center; gap:8px;
+    padding:8px 16px; border-radius:999px; font-size:.8rem; font-weight:700; color:rgba(253,244,222,.65);
+    background:rgba(43,26,16,.55); border:1px solid rgba(222,170,93,.25); transition:.25s; max-width:60vw; }
+  .draw-chip:hover { color:#fdf4de; border-color:rgba(222,170,93,.6); }
+  .draw-chip span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .picker { position:fixed; inset:0; z-index:80; display:none; place-items:center; padding:20px;
+    background:rgba(28,16,8,.8); backdrop-filter:blur(10px); }
+  .picker.on { display:grid; }
+  .picker-box { width:min(460px,94vw); max-height:84vh; overflow:auto; border-radius:24px; padding:26px 24px;
+    background:linear-gradient(165deg,#3c2312,#2b1a10); border:1px solid rgba(222,170,93,.45);
+    box-shadow:0 45px 90px -50px rgba(0,0,0,.9); animation: popIn .3s cubic-bezier(.18,1.1,.3,1) both; }
+  .draw-opt { display:flex; align-items:center; gap:12px; width:100%; text-align:start; padding:15px 18px; margin-top:10px;
+    border-radius:16px; border:1px solid rgba(222,170,93,.3); background:rgba(222,170,93,.07); color:#fdf4de;
+    font-weight:700; transition:.2s; }
+  .draw-opt:hover { border-color:#deaa5d; background:rgba(222,170,93,.16); }
+  .draw-opt.on { border-color:#deaa5d; background:rgba(222,170,93,.22); box-shadow:0 0 26px -10px rgba(222,170,93,.7); }
+  .draw-opt .sub { font-size:.78rem; font-weight:600; opacity:.6; margin-top:3px; }
   .reset-bar { height:4px; border-radius:999px; background:rgba(222,170,93,.15); margin-top:22px; overflow:hidden; }
   .reset-bar > div { height:100%; width:100%; border-radius:999px; background:linear-gradient(90deg,#deaa5d,#af6a16); transform-origin:left; }
   .reset-bar.run > div { animation: shrink 6s linear forwards; }
@@ -146,6 +165,8 @@
   <div class="vignette"></div>
   <canvas id="dust"></canvas>
 
+  <button class="draw-chip" id="drawChip" title="تغيير السحب">⇄ <span id="drawChipName">—</span></button>
+
   <div class="logo-card in in-1"><img src="assets/hashi-logo-live.png" alt="مخيم الحاشي"></div>
 
   <div class="in in-2" style="display:flex;flex-direction:column;align-items:center;gap:8px;">
@@ -174,6 +195,14 @@
       <label class="f-label"><span class="tar">رقم الهاتف</span><span class="ten">Phone number</span></label>
       <input id="regPhone" class="dark-field" placeholder="+968 9•• •• ••" style="direction:ltr;text-align:start;" inputmode="tel" autocomplete="off">
 
+      <!-- Shown only when the selected draw is a photographers' draw -->
+      <div id="reelBlock" style="display:none;">
+        <label class="f-label">🎬 <span class="tar">روابط ريلز إنستقرام — رابط واحد إلزامي، حتى 3</span><span class="ten">Instagram Reel links — 1 required, up to 3</span></label>
+        <input id="reel1" class="dark-field" placeholder="https://instagram.com/reel/…  ·  1" style="direction:ltr;text-align:start;font-size:.95rem;">
+        <input id="reel2" class="dark-field" placeholder="https://instagram.com/reel/…  ·  2" style="direction:ltr;text-align:start;font-size:.95rem;">
+        <input id="reel3" class="dark-field" placeholder="https://instagram.com/reel/…  ·  3" style="direction:ltr;text-align:start;font-size:.95rem;">
+      </div>
+
       <label style="display:flex;align-items:flex-start;gap:12px;cursor:pointer;margin:4px 0 20px;">
         <input type="checkbox" id="regAgree" style="width:20px;height:20px;margin-top:1px;accent-color:var(--poslix-accent);">
         <span style="font-size:.88rem;opacity:.8;line-height:1.5;"><span class="tar">أوافق على شروط المشاركة واستقبال رسائل واتساب</span><span class="ten">I agree to the terms and to receive WhatsApp messages</span></span>
@@ -197,9 +226,16 @@
 
   <div class="stat-row in in-5">
     <div class="stat-chip" id="partChip"><span class="n" id="totalParticipants">—</span><span class="tar">مشترك حتى الآن</span><span class="ten">entered so far</span></div>
-    <div class="stat-chip"><span class="n" id="prizeCount">—</span><span class="tar">فائزين</span><span class="ten">winners</span></div>
   </div>
   <div class="join-note" id="joinNote"></div>
+</div>
+
+<div class="picker" id="picker">
+  <div class="picker-box">
+    <div class="prize-eyebrow" style="justify-content:center;margin-bottom:6px;"><span class="tar">اختر السحب</span><span class="ten">Choose a draw</span></div>
+    <div id="drawList"></div>
+    <button class="btn-ghost" id="pickerClose" style="display:block;margin:20px auto 0;padding:11px 28px;border-color:rgba(255,255,255,.2);color:rgba(253,244,222,.8);"><span class="tar">إغلاق</span><span class="ten">Close</span></button>
+  </div>
 </div>
 
 <script type="module">
@@ -207,7 +243,18 @@ import { api, toast, initLang, connectWS, esc } from './js/common.js';
 initLang();
 const $ = (id) => document.getElementById(id);
 const isEn = () => document.body.getAttribute('data-lang') === 'en';
-let drawDate = null, resetTo = null;
+let drawDate = null, resetTo = null, segment = 'visitor';
+
+/* ============ Which draw this kiosk feeds ============
+   ?campaignId=N pins the tablet to one draw (and is remembered), otherwise
+   the last choice is reused, otherwise the active visitors' draw. */
+const DRAW_KEY = 'ld_kiosk_draw';
+let campaignId = (() => {
+  const fromUrl = new URLSearchParams(location.search).get('campaignId');
+  if (fromUrl) { localStorage.setItem(DRAW_KEY, fromUrl); return parseInt(fromUrl, 10); }
+  const saved = localStorage.getItem(DRAW_KEY);
+  return saved ? parseInt(saved, 10) : null;
+})();
 
 /* ============ Ambient dust ============ */
 (() => {
@@ -271,22 +318,55 @@ function startCountdown() {
   cdIv = setInterval(render, 1000);
 }
 
-/* ============ Campaign info (kiosk registers visitors) ============ */
+/* ============ Campaign info ============ */
 async function loadHero() {
-  const c = await api.get('/api/campaign?segment=visitor');
-  if (c.error) return;
+  const c = await api.get('/api/campaign' + (campaignId ? '?campaignId=' + campaignId : '?segment=visitor'));
+  if (c.error) {
+    // A pinned draw that no longer exists — fall back to the active one.
+    if (campaignId) { campaignId = null; localStorage.removeItem(DRAW_KEY); return loadHero(); }
+    return;
+  }
+  campaignId = c.id;
+  segment = c.segment === 'photographer' ? 'photographer' : 'visitor';
   $('prizeName').textContent = c.prizeName;
   $('campaignName').textContent = c.storeName + ' · ' + c.campaignName;
-  $('prizeCount').textContent = c.prizeCount;
+  $('drawChipName').textContent = c.campaignName;
+  $('reelBlock').style.display = segment === 'photographer' ? 'block' : 'none';
   countUp($('totalParticipants'), c.totalParticipants);
   drawDate = c.drawDate;
   startCountdown();
 }
 
+/* ============ Draw picker (staff) ============ */
+async function openPicker() {
+  const { items } = await api.get('/api/campaigns');
+  $('drawList').innerHTML = (items || []).map(d => `
+    <button class="draw-opt ${d.id === campaignId ? 'on' : ''}" data-id="${d.id}">
+      <span style="font-size:1.2rem;">${d.type === 'photographer' ? '📸' : '🚗'}</span>
+      <span style="flex:1;min-width:0;">
+        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(d.name)}</div>
+        <div class="sub">${esc(d.prize)}</div>
+      </span>
+      ${d.id === campaignId ? '<span>✓</span>' : ''}
+    </button>`).join('') || `<div class="caption" style="text-align:center;padding:20px;">${isEn() ? 'No draws' : 'لا توجد سحوبات'}</div>`;
+
+  $('picker').classList.add('on');
+  document.querySelectorAll('.draw-opt').forEach(b => b.addEventListener('click', () => {
+    campaignId = parseInt(b.dataset.id, 10);
+    localStorage.setItem(DRAW_KEY, String(campaignId));
+    $('picker').classList.remove('on');
+    reset();
+  }));
+}
+$('drawChip').addEventListener('click', openPicker);
+$('pickerClose').addEventListener('click', () => $('picker').classList.remove('on'));
+$('picker').addEventListener('click', (e) => { if (e.target === $('picker')) $('picker').classList.remove('on'); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('picker').classList.remove('on'); });
+
 /* ============ Live joins ============ */
 let noteTo = null;
 connectWS((m) => {
-  if (m.type !== 'participant:new' || m.segment !== 'visitor') return;
+  if (m.type !== 'participant:new' || m.campaignId !== campaignId) return;
   countUp($('totalParticipants'), m.count, 600);
   const chip = $('partChip');
   chip.classList.remove('pulse'); void chip.offsetWidth; chip.classList.add('pulse');
@@ -304,9 +384,16 @@ $('submitBtn').addEventListener('click', async () => {
   const phone = $('regPhone').value.trim();
   if (!name) return toast(isEn() ? 'Enter a name' : 'أدخل الاسم', true);
   if (phone.replace(/\D/g,'').length < 8) return toast(isEn() ? 'Enter a valid number' : 'أدخل رقماً صحيحاً', true);
+  let reels = [];
+  if (segment === 'photographer') {
+    reels = [$('reel1').value, $('reel2').value, $('reel3').value].map(s => s.trim()).filter(Boolean);
+    if (!reels.length) return toast(isEn() ? 'Add at least one Reel link' : 'أضف رابط ريل واحداً على الأقل', true);
+    const isInsta = (u) => /^(https?:\/\/)?(www\.)?(instagram\.com|instagr\.am)\/(reel|reels|p|tv)\/[^/]+/i.test(u);
+    if (!reels.every(isInsta)) return toast(isEn() ? 'Links must be valid Instagram Reels' : 'الروابط يجب أن تكون ريلز إنستقرام صحيحة', true);
+  }
   if (!$('regAgree').checked) return toast(isEn() ? 'Please accept the terms' : 'يرجى الموافقة', true);
   const btn = $('submitBtn'); btn.disabled = true;
-  const r = await api.post('/api/register', { name, phone, agree: true, source: 'kiosk' });
+  const r = await api.post('/api/register', { name, phone, agree: true, source: 'kiosk', campaignId, reels });
   btn.disabled = false;
   if (r.ok) {
     $('formView').style.display = 'none';
@@ -317,13 +404,21 @@ $('submitBtn').addEventListener('click', async () => {
     clearTimeout(resetTo);
     resetTo = setTimeout(reset, 6000);
   }
-  else if (r.status === 409) toast(isEn() ? 'Already registered' : 'مسجّل مسبقاً', true);
-  else toast(isEn() ? 'Error, try again' : 'حدث خطأ', true);
+  else {
+    const err = r.data?.error;
+    toast(err === 'max-entries' ? (isEn() ? 'This number reached the maximum of 3 entries' : 'وصل هذا الرقم الحد الأقصى (3 اشتراكات)')
+        : err === 'already-registered' ? (isEn() ? 'Already registered' : 'مسجّل مسبقاً')
+        : err === 'reel-used' ? (isEn() ? 'One of these reels is already entered' : 'أحد الريلز مُستخدَم مسبقاً')
+        : err === 'reel-duplicate' ? (isEn() ? 'The reel links must be different' : 'روابط الريلز يجب أن تكون مختلفة')
+        : err === 'reel-not-instagram' ? (isEn() ? 'Links must be valid Instagram Reels' : 'الرابط ليس ريل إنستقرام صحيح')
+        : (isEn() ? 'Error, try again' : 'حدث خطأ'), true);
+  }
 });
 
 function reset() {
   clearTimeout(resetTo);
-  $('regName').value = ''; $('regPhone').value = ''; $('regAgree').checked = false;
+  ['regName','regPhone','reel1','reel2','reel3'].forEach(id => $(id).value = '');
+  $('regAgree').checked = false;
   $('doneView').style.display = 'none'; $('formView').style.display = 'block';
   $('resetBar').classList.remove('run');
   loadHero();
